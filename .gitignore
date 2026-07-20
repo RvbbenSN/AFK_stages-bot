@@ -1,0 +1,22 @@
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Bot activity and debug logs
+bot.log
+
+# Operating system metadata
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editor configurations (VS Code, PyCharm, etc.)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

@@ -20,3 +20,8 @@ desktop.ini
 *.njsproj
 *.sln
 *.swp
+
+# Virtual environments
+.venv/
+venv/
+ENV/

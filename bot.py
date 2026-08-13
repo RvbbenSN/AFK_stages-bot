@@ -58,7 +58,7 @@ def get_game_window():
         for w in wins:
             # Descartar ventanas de consola, scripts de python, editores o el propio lanzador
             lower_title = w.title.lower()
-            if any(x in lower_title for x in ["lanzador", "terminal", "cmd.exe", "powershell", "python", "code", "bot.py", "visual studio"]):
+            if any(x in lower_title for x in ["lanzador", "terminal", "cmd.exe", "powershell", "python", "code", "bot.py", "visual studio", "panel de control", "dashboard"]):
                 continue
             if w.width > 150 and w.height > 150:
                 return w
@@ -100,19 +100,26 @@ TEMPLATE_THRESHOLDS = {
     "defeat": 0.80,
     "records": 0.80,
     "copy": 0.80,
-    "retry": 0.80
+    "retry": 0.80,
+    "cancel_no-heroe": 0.80,
+    "formations_btn": 0.80,
+    "AFKST1": 0.80,
+    "AFKST2": 0.80,
+    "use_btn": 0.80,
+    "battle_modes": 0.70,
+    "AFK_stages": 0.70,
+    "green_tick": 0.80
 }
 
-def match_template_single(screenshot, template_name):
+def match_template_single(screen_cv, template_name):
     """
-    Busca un elemento en la captura de pantalla usando el nombre base de la plantilla.
+    Busca un elemento en la captura de pantalla OpenCV (screen_cv).
     Retorna (confianza, (centro_x, centro_y)) o (0, None) si no hay coincidencia.
     """
     template = load_template(template_name)
     if template is None:
         return 0, None
         
-    screen_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
     result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)
     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
     
@@ -124,6 +131,68 @@ def match_template_single(screenshot, template_name):
         cy = max_loc[1] + h // 2
         return max_val, (cx, cy)
     return max_val, None
+
+def match_template_multi(screen_cv, template_name):
+    """
+    Busca todas las ocurrencias de un elemento en la captura de pantalla OpenCV (screen_cv).
+    Retorna una lista de coordenadas (centro_x, centro_y).
+    """
+    template = load_template(template_name)
+    if template is None:
+        return []
+        
+    result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)
+    threshold = TEMPLATE_THRESHOLDS.get(template_name, config.CONFIDENCE_THRESHOLD)
+    
+    loc = np.where(result >= threshold)
+    h, w = template.shape[:2]
+    
+    points = []
+    # Supresión de no-máximos simple para agrupar píxeles vecinos
+    for pt in zip(*loc[::-1]):
+        cx = pt[0] + w // 2
+        cy = pt[1] + h // 2
+        
+        too_close = False
+        for px, py in points:
+            if abs(py - cy) < h // 2 and abs(px - cx) < w // 2:
+                too_close = True
+                break
+        if not too_close:
+            points.append((cx, cy))
+            
+    return points
+
+def get_team_for_attempt(stage_attempt):
+    """
+    Calcula el tipo de equipo y su valor/índice correspondiente para el intento actual (0 a 19).
+    Retorna (team_type, team_value)
+    Donde:
+      - team_type: "community" o "custom"
+      - team_value: índice entero (0-9) para community, o nombre de plantilla (str) para custom
+    """
+    # Intentos 1 al 5 (stage_attempt 0-4): Comunidad 1-5
+    if stage_attempt in [0, 1, 2, 3, 4]:
+        return "community", stage_attempt
+    # Intentos 6 y 7 (stage_attempt 5-6): Personalizados AFKST1 y AFKST2
+    elif stage_attempt == 5:
+        return "custom", "AFKST1"
+    elif stage_attempt == 6:
+        return "custom", "AFKST2"
+    # Intentos 8 al 12 (stage_attempt 7-11): Comunidad 1-5 (segundo pase)
+    elif stage_attempt in [7, 8, 9, 10, 11]:
+        return "community", stage_attempt - 7
+    # Intentos 13 y 14 (stage_attempt 12-13): Personalizados AFKST1 y AFKST2 (segundo pase)
+    elif stage_attempt == 12:
+        return "custom", "AFKST1"
+    elif stage_attempt == 13:
+        return "custom", "AFKST2"
+    # Intentos 15 al 19 (stage_attempt 14-18): Comunidad 6-10
+    elif stage_attempt in [14, 15, 16, 17, 18]:
+        return "community", 5 + (stage_attempt - 14)
+    # Intento 20 (stage_attempt 19): Comunidad 6
+    else:
+        return "community", 5
 
 def simulate_human_click(window, rel_x, rel_y):
     """Realiza un clic con desviación aleatoria, movimiento suave y retención del botón para juegos DirectX."""
@@ -144,11 +213,11 @@ def simulate_human_click(window, rel_x, rel_y):
         pass
         
     # Mover el ratón suavemente al punto (evita saltos bruscos detectados por anti-cheats)
-    pyautogui.moveTo(click_x, click_y, duration=random.uniform(0.15, 0.3))
+    pyautogui.moveTo(click_x, click_y, duration=random.uniform(0.08, 0.15))
     
     # Presionar y soltar con un retardo que emule un clic físico real
     pyautogui.mouseDown()
-    time.sleep(random.uniform(0.08, 0.15))
+    time.sleep(random.uniform(0.05, 0.10))
     pyautogui.mouseUp()
 
 def run_bot():
@@ -165,7 +234,8 @@ def run_bot():
     essential_templates = [
         "battle_modes", "AFK_stages", "normal_challenge", "phantimal_challenge",
         "records", "next_formation", "copy", "battle", "victory",
-        "continuar_normal", "continuar_phantimal", "defeat", "retry", "atras"
+        "continuar_normal", "continuar_phantimal", "defeat", "retry", "atras",
+        "cancel_no-heroe", "formations_btn", "AFKST1", "AFKST2", "use_btn", "green_tick"
     ]
     
     print("[INFO] Comprobando archivos de imágenes en images/:")
@@ -192,21 +262,39 @@ def run_bot():
         current_mode = default_mode_cfg
         
     current_team_index = 0             # 0 = equipo 1, 1 = equipo 2, etc.
-    consecutive_defeats = 0
+    consecutive_defeats = 0            # Derrotas consecutivas globales (límite 30)
     need_mode_switch = False
     connected_window_title = None
     no_match_count = 0
     team_already_copied = False
     battles_count = 0                  # Contador de combates para rotar cada 5 intentos
+    stages_cleared_normal = 0          # Contador de victorias normales en la sesión
+    stages_cleared_phantimal = 0       # Contador de victorias phantimal en la sesión
+    stage_attempt = 0                  # Intentos en la etapa actual en este modo (límite 20)
+    mode_locked = False                # Si está bloqueado en un modo por haber fallado 20 veces en el otro
+    current_displayed_team_index = 0   # Índice de formación que está actualmente visible en pantalla
+    team_type = "community"            # "community" o "custom"
+    custom_name = None                 # Nombre de la formación personalizada ("AFKST1" o "AFKST2")
+    
+    
     
     print(f"\n[ESTADO INICIAL] Modo de inicio: {current_mode.upper()} | Equipo inicial: #{current_team_index + 1}")
     
     while True:
+        # Detener la ejecución si se solicita desde la interfaz gráfica
+        if not getattr(config, "BOT_RUNNING", True):
+            print("[BOT] Detención solicitada. Saliendo de la ejecución...")
+            break
+
         matched = False
         window = get_game_window()
         if not window:
             print("[ADVERTENCIA] No se detecta la ventana del juego. Asegúrate de tenerlo abierto y no minimizado.")
-            time.sleep(5)
+            # Espera corta dividida para mantener la interfaz responsive al detener
+            for _ in range(6):
+                if not getattr(config, "BOT_RUNNING", True):
+                    break
+                time.sleep(0.5)
             continue
             
         if window.title != connected_window_title:
@@ -235,27 +323,48 @@ def run_bot():
         bbox = (window.left, window.top, window.left + window.width, window.top + window.height)
         try:
             screenshot = ImageGrab.grab(bbox=bbox, all_screens=True)
+            screen_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
         except Exception as e:
             if config.DEBUG:
                 print(f"[ERROR] Error al realizar captura de pantalla: {e}")
             time.sleep(2)
             continue
             
+        # Resolver dinámicamente el equipo a utilizar basado en stage_attempt
+        team_type, team_value = get_team_for_attempt(stage_attempt)
+        if team_type == "community":
+            current_team_index = team_value
+            custom_name = None
+        else:
+            current_team_index = 0
+            custom_name = team_value
+
         # 1. VERIFICAR VICTORIA
-        _, victory_pt = match_template_single(screenshot, "victory")
+        _, victory_pt = match_template_single(screen_cv, "victory")
         if victory_pt:
             matched = True
             print(f"[VICTORIA] ¡Etapa superada con éxito!")
-            # Resetear contadores de fallos
+            
+            # Incrementar contadores de victorias de la sesión
+            if current_mode == "battle":
+                stages_cleared_normal += 1
+            else:
+                stages_cleared_phantimal += 1
+            print(f"[ESTADÍSTICAS] Superadas en esta sesión -> Normal: {stages_cleared_normal} | Phantimal: {stages_cleared_phantimal}")
+            
+            # Resetear contadores de fallos y desbloquear modos
             current_team_index = 0
             consecutive_defeats = 0
+            stage_attempt = 0
+            mode_locked = False
             team_already_copied = False
+            current_displayed_team_index = 0
             
-            # Incrementar contador de batallas e intercalar si llegamos a 5
+            # Incrementar contador de batallas e intercalar si llegamos a 5 (solo si el modo no está bloqueado)
             battles_count += 1
             print(f"[BOT] Batalla completada en este modo ({battles_count}/5).")
             
-            if battles_count >= 5:
+            if battles_count >= 5 and not mode_locked:
                 print("[MODO] Se han completado 5 batallas en este modo. Rotando al modo alternativo...")
                 need_mode_switch = True
                 battles_count = 0
@@ -269,7 +378,7 @@ def run_bot():
                 need_mode_switch = False
                 # Hacer clic en el botón de continuar según el modo activo
                 btn_name = "continuar_normal" if current_mode == "battle" else "continuar_phantimal"
-                _, cont_pt = match_template_single(screenshot, btn_name)
+                _, cont_pt = match_template_single(screen_cv, btn_name)
                 
                 if cont_pt:
                     print(f"[BOT] Avanzando a la siguiente etapa ({btn_name})...")
@@ -279,40 +388,60 @@ def run_bot():
                     print("[BOT] Pantalla de victoria detectada pero no veo el botón de continuar. Clic en el centro de victoria.")
                     simulate_human_click(window, victory_pt[0], victory_pt[1])
                 
-            time.sleep(config.LOOP_DELAY + 2.0)
+            time.sleep(config.LOOP_DELAY + 0.8)
             continue
             
         # 2. VERIFICAR DERROTA
-        _, defeat_pt = match_template_single(screenshot, "defeat")
+        _, defeat_pt = match_template_single(screen_cv, "defeat")
         if defeat_pt:
             matched = True
             consecutive_defeats += 1
-            current_team_index += 1
+            stage_attempt += 1
             battles_count += 1
             team_already_copied = False
-            print(f"[DERROTA] Falla en la etapa. Intentos en este modo: {battles_count}/5 | Derrotas consecutivas en esta etapa: {current_team_index}")
+            current_displayed_team_index = 0  # El panel se cierra por la derrota, así que se reinicia a 0
+            print(f"[DERROTA] Falla en la etapa. Intento #{stage_attempt}/20 en este nivel. (Derrotas globales consecutivas: {consecutive_defeats}/30)")
             
-            # Comprobar si debemos alternar de modo por límite de batallas (5) o bloqueo en esta etapa
-            if battles_count >= 5:
+            # Failsafe para detener si acumulamos 30 derrotas consecutivas globales sin victoria
+            if consecutive_defeats >= 30:
+                print("\n" + "="*60)
+                print("[FAILSAFE] SE HAN SUCEDIDO 30 DERROTAS CONSECUTIVAS GLOBALES.")
+                print("Es probable que tus personajes necesiten subir de nivel en la Resonancia.")
+                print("Deteniendo el bot para evitar un bucle infinito.")
+                print("="*60 + "\n")
+                raise RuntimeError("Límite de 30 derrotas consecutivas globales alcanzado.")
+            
+            # Comprobar si debemos alternar de modo por límite de 20 intentos en la misma etapa
+            if stage_attempt >= 20:
+                print("[MODO] Se han realizado 20 intentos fallidos en este nivel. Cambiando al otro modo y bloqueándolo allí...")
+                need_mode_switch = True
+                current_mode = "phantimal" if current_mode == "battle" else "battle"
+                mode_locked = True
+                stage_attempt = 0
+                battles_count = 0
+                current_team_index = 0
+            # Comprobar si debemos alternar por límite de 5 combates (solo si el modo no está bloqueado)
+            elif battles_count >= 5 and not mode_locked:
                 print("[MODO] Se han completado 5 batallas en este modo. Rotando al modo alternativo...")
                 need_mode_switch = True
                 battles_count = 0
                 current_team_index = 0
+                stage_attempt = 0
                 current_mode = "phantimal" if current_mode == "battle" else "battle"
-            elif current_team_index >= config.MAX_TEAMS_TO_TRY:
-                print(f"[ATASCADO] Se probaron {config.MAX_TEAMS_TO_TRY} formaciones sin éxito. Rotando al modo alternativo...")
-                need_mode_switch = True
-                battles_count = 0
-                current_team_index = 0
-                current_mode = "phantimal" if current_mode == "battle" else "battle"
+            else:
+                next_type, next_value = get_team_for_attempt(stage_attempt)
+                if next_type == "community":
+                    print(f"[BOT] Configurado para usar formación de comunidad #{next_value + 1}")
+                else:
+                    print(f"[BOT] Configurado para usar formación personalizada: {next_value}")
                 
             # Buscar el botón de reintentar
-            _, retry_pt = match_template_single(screenshot, "retry")
+            _, retry_pt = match_template_single(screen_cv, "retry")
             if retry_pt:
                 if need_mode_switch:
                     # En lugar de reintentar el combate, queremos salir para cambiar de pestaña.
                     # Buscamos el botón de retroceso (atrás) para volver al menú de selección
-                    _, atras_pt = match_template_single(screenshot, "atras")
+                    _, atras_pt = match_template_single(screen_cv, "atras")
                     if atras_pt:
                         print("[BOT] Retrocediendo al menú principal de etapas para cambiar de pestaña...")
                         simulate_human_click(window, atras_pt[0], atras_pt[1])
@@ -321,82 +450,217 @@ def run_bot():
                         print("[BOT] Volviendo a preparación para poder retroceder...")
                         simulate_human_click(window, retry_pt[0], retry_pt[1])
                 else:
-                    print("[BOT] Volviendo a preparación para reintentar con otra formación...")
+                    print("[BOT] Volviendo a preparación para reintentar...")
                     simulate_human_click(window, retry_pt[0], retry_pt[1])
             else:
                 # Si no encuentra el botón de reintentar pero ve derrota, clic en el texto para cerrar
                 simulate_human_click(window, defeat_pt[0], defeat_pt[1])
                 
-            time.sleep(config.LOOP_DELAY + 2.0)
+            time.sleep(config.LOOP_DELAY + 0.8)
+            continue
+            
+        # 2.5. VERIFICAR HÉROE NO DISPONIBLE (Falta personaje en la formación copiada)
+        _, no_hero_pt = match_template_single(screen_cv, "cancel_no-heroe")
+        if no_hero_pt:
+            matched = True
+            print("[ADVERTENCIA] La formación copiada contiene héroes no disponibles en tu cuenta.")
+            print("[BOT] Haciendo clic en Cancelar para buscar otra formación...")
+            simulate_human_click(window, no_hero_pt[0], no_hero_pt[1])
+            
+            # Avanzar al siguiente intento para el próximo ciclo
+            stage_attempt += 1
+            team_already_copied = False
+            
+            # Comprobar si debemos alternar de modo por límite de 20 intentos en la misma etapa
+            if stage_attempt >= 20:
+                print("[MODO] Se han realizado 20 intentos en este nivel (incluyendo cancelaciones). Cambiando al otro modo y bloqueándolo allí...")
+                need_mode_switch = True
+                current_mode = "phantimal" if current_mode == "battle" else "battle"
+                mode_locked = True
+                stage_attempt = 0
+                battles_count = 0
+                current_team_index = 0
+            else:
+                next_type, next_value = get_team_for_attempt(stage_attempt)
+                if next_type == "community":
+                    print(f"[BOT] Siguiente intento configurado para usar formación de comunidad #{next_value + 1}")
+                else:
+                    print(f"[BOT] Siguiente intento configurado para usar formación personalizada: {next_value}")
+                
+            time.sleep(config.LOOP_DELAY + 0.5)
+            continue
+            
+        # 2.7. VERIFICAR ADVERTENCIA DE RECOMPENSAS LIMITADAS (Tick verde)
+        _, green_tick_pt = match_template_single(screen_cv, "green_tick")
+        if green_tick_pt:
+            matched = True
+            print("[BOT] Detectado popup de advertencia de recompensas limitadas. Confirmando...")
+            simulate_human_click(window, green_tick_pt[0], green_tick_pt[1])
+            time.sleep(config.LOOP_DELAY + 0.6)
             continue
             
         # 3. CAMBIO DE MODO REQUERIDO (Atascado en un modo, volver al mapa principal de etapas)
         if need_mode_switch:
-            # Comprobar si estamos en el menú de preparación (donde sale battle.jpg)
-            _, battle_prep_pt = match_template_single(screenshot, "battle")
-            if battle_prep_pt:
+            _, battle_prep_pt = match_template_single(screen_cv, "battle")
+            _, copy_prep_pt = match_template_single(screen_cv, "copy")
+            _, use_prep_pt = match_template_single(screen_cv, "use_btn")
+            
+            if battle_prep_pt or copy_prep_pt or use_prep_pt:
                 matched = True
-                # Si estamos preparando combate pero queremos cambiar de modo, debemos salir pulsando atrás
-                _, atras_pt = match_template_single(screenshot, "atras")
+                
+                # Si el panel de registros está abierto, primero debemos cerrarlo para ver el botón de atrás
+                if copy_prep_pt or use_prep_pt:
+                    print("[BOT] Panel de registros abierto durante solicitud de cambio de modo. Cerrando panel...")
+                    simulate_human_click(window, int(window.width * 0.25), int(window.height * 0.5))
+                    time.sleep(0.6)
+                    continue
+                    
+                # Si el panel está cerrado, buscamos el botón de retroceso (atrás)
+                _, atras_pt = match_template_single(screen_cv, "atras")
                 if atras_pt:
-                    print("[BOT] Saliendo de la pantalla de preparación...")
+                    print("[BOT] Saliendo de la pantalla de preparación para alternar modo...")
                     simulate_human_click(window, atras_pt[0], atras_pt[1])
-                    time.sleep(config.LOOP_DELAY + 1.5)
+                    time.sleep(config.LOOP_DELAY + 0.5)
                     continue
                     
         # 4. PANTALLA DE PREPARACIÓN DEL COMBATE
         # Sabemos que estamos aquí si vemos el botón verde 'battle' o si el panel ya está abierto ('copy')
-        _, battle_pt = match_template_single(screenshot, "battle")
-        _, copy_pt = match_template_single(screenshot, "copy")
-        if (battle_pt or copy_pt) and not need_mode_switch:
+        _, battle_pt = match_template_single(screen_cv, "battle")
+        _, copy_pt = match_template_single(screen_cv, "copy")
+        _, use_pt = match_template_single(screen_cv, "use_btn")
+        if (battle_pt or copy_pt or use_pt) and not need_mode_switch:
             matched = True
             
             # Si ya hemos copiado el equipo en esta fase, iniciamos combate directamente
             if team_already_copied:
                 if battle_pt:
-                    print("[BOT] Equipo ya configurado. Iniciando la batalla...")
+                    if team_type == "community":
+                        print(f"[BOT] Equipo ya configurado. Iniciando la batalla (Intento #{current_team_index + 1} en esta etapa)...")
+                    else:
+                        print(f"[BOT] Equipo ya configurado. Iniciando la batalla (Intento con formación personalizada {custom_name})...")
                     simulate_human_click(window, battle_pt[0], battle_pt[1])
-                    time.sleep(config.LOOP_DELAY + 2.5)
+                    time.sleep(config.LOOP_DELAY + 1.0)
                 else:
                     print("[ADVERTENCIA] Intentando iniciar batalla pero el botón 'battle' no es visible.")
                     # Si por alguna razón el panel se cerró mal, reintentamos el proceso de copiado en el siguiente ciclo
                     team_already_copied = False
                 continue
             
-            if not copy_pt:
-                # El menú de récords está cerrado. Buscamos el botón para abrirlo
-                _, record_pt = match_template_single(screenshot, "records")
-                if record_pt:
-                    print("[BOT] Abriendo el panel de formaciones de la comunidad...")
-                    simulate_human_click(window, record_pt[0], record_pt[1])
-                    time.sleep(config.LOOP_DELAY + 1.0)
-                else:
-                    # Si no encuentra el botón de registros, empezamos combate con lo que haya
-                    print("[ADVERTENCIA] Botón de registros no encontrado. Iniciando combate por defecto...")
-                    if battle_pt:
-                        simulate_human_click(window, battle_pt[0], battle_pt[1])
-                        time.sleep(config.LOOP_DELAY + 2.0)
-                continue
-            else:
-                # El panel de registros está abierto.
-                # Para seleccionar el equipo 'current_team_index' (0 a 4), pulsamos 'next_formation' N veces
-                if current_team_index > 0:
-                    print(f"[RECORDS] Avanzando {current_team_index} veces para llegar a la formación #{current_team_index + 1}...")
-                    _, next_pt = match_template_single(screenshot, "next_formation")
+            if team_type == "custom":
+                # LÓGICA DE FORMACIONES PERSONALIZADAS
+                if copy_pt:
+                    print("[RECORDS] El panel de comunidad está abierto pero toca usar formación personalizada. Cerrándolo...")
+                    simulate_human_click(window, int(window.width * 0.25), int(window.height * 0.5))
+                    current_displayed_team_index = 0
+                    time.sleep(0.6)
+                    continue
                     
-                    if next_pt:
-                        for i in range(current_team_index):
-                            print(f"  -> Clic en Siguiente Formación ({i+1}/{current_team_index})")
-                            simulate_human_click(window, next_pt[0], next_pt[1])
-                            time.sleep(0.8) # Espera pequeña para que cargue la visual
+                form_panel_open = (use_pt is not None)
+                if not form_panel_open:
+                    # El panel de formaciones está cerrado. Buscamos el botón para abrirlo
+                    _, form_btn_pt = match_template_single(screen_cv, "formations_btn")
+                    if form_btn_pt:
+                        print("[FORMACIONES] Abriendo el panel de formaciones personalizadas...")
+                        simulate_human_click(window, form_btn_pt[0], form_btn_pt[1])
+                        time.sleep(config.LOOP_DELAY + 0.5)
                     else:
-                        print("[ADVERTENCIA] No se encontró el botón de 'next_formation'. Usando la formación por defecto.")
+                        print("[ADVERTENCIA] Botón de formaciones personalizadas no encontrado.")
+                    continue
+                else:
+                    # El panel de formaciones personalizadas está abierto.
+                    # Buscar la cabecera correspondiente (AFKST1 o AFKST2)
+                    _, target_header_pt = match_template_single(screen_cv, custom_name)
+                    if target_header_pt:
+                        print(f"[FORMACIONES] Encontrada cabecera para {custom_name} en Y: {target_header_pt[1]}")
+                        # Buscar todos los botones "Use" en la pantalla
+                        use_points = match_template_multi(screen_cv, "use_btn")
+                        if use_points:
+                            # Encontrar el botón "Use" más alineado verticalmente con target_header_pt[1]
+                            best_use_pt = min(use_points, key=lambda pt: abs(pt[1] - target_header_pt[1]))
+                            if abs(best_use_pt[1] - target_header_pt[1]) < 40:
+                                print(f"[FORMACIONES] Aplicando formación {custom_name} haciendo clic en Use en Y: {best_use_pt[1]}")
+                                simulate_human_click(window, best_use_pt[0], best_use_pt[1])
+                                team_already_copied = True
+                                time.sleep(config.LOOP_DELAY + 0.8)
+                            else:
+                                print(f"[ADVERTENCIA] Botón 'Use' más cercano a {custom_name} está muy desalineado ({abs(best_use_pt[1] - target_header_pt[1])}px).")
+                        else:
+                            print("[ADVERTENCIA] No se encontraron botones 'Use' en el panel de formaciones.")
+                    else:
+                        print(f"[ADVERTENCIA] No se encontró la formación personalizada {custom_name} en pantalla.")
+                        # Cerrar el panel haciendo clic en la parte izquierda para no bloquearse
+                        simulate_human_click(window, int(window.width * 0.25), int(window.height * 0.5))
+                        time.sleep(0.5)
+                    continue
+            else:
+                # LÓGICA DE FORMACIONES DE LA COMUNIDAD (Copiado clásico)
+                if use_pt:
+                    # Si el panel de formaciones personalizadas está abierto por error, lo cerramos
+                    print("[FORMACIONES] Cerrando panel de formaciones personalizadas para usar comunidad...")
+                    simulate_human_click(window, int(window.width * 0.25), int(window.height * 0.5))
+                    time.sleep(0.5)
+                    continue
+                    
+                if not copy_pt:
+                    # El menú de récords está cerrado. Buscamos el botón para abrirlo
+                    _, record_pt = match_template_single(screen_cv, "records")
+                    if record_pt:
+                        print("[BOT] Abriendo el panel de formaciones de la comunidad...")
+                        simulate_human_click(window, record_pt[0], record_pt[1])
+                        current_displayed_team_index = 0  # Restablecer puesto que se abre desde cero
+                        time.sleep(config.LOOP_DELAY + 0.4)
+                    else:
+                        # Si no encuentra el botón de registros, empezamos combate con lo que haya
+                        print("[ADVERTENCIA] Botón de registros no encontrado. Iniciando combate por defecto...")
+                        if battle_pt:
+                            simulate_human_click(window, battle_pt[0], battle_pt[1])
+                            time.sleep(config.LOOP_DELAY + 0.8)
+                    continue
+                else:
+                    # El panel de registros está abierto.
+                    # Calcular cuántos clics de avance necesitamos desde la posición actual en pantalla
+                    clicks_needed = current_team_index - current_displayed_team_index
+                    if clicks_needed < 0:
+                        print(f"[RECORDS] La formación objetivo #{current_team_index + 1} requiere retroceder (actual: #{current_displayed_team_index + 1}). Cerrando panel para reiniciar...")
+                        # Hacer clic en la parte izquierda del juego para cerrar el panel deslizante
+                        simulate_human_click(window, int(window.width * 0.25), int(window.height * 0.5))
+                        current_displayed_team_index = 0
+                        time.sleep(0.6)
+                        continue
+                        
+                    if clicks_needed > 0:
+                        print(f"[RECORDS] Avanzando {clicks_needed} veces para llegar a la formación #{current_team_index + 1} (Índice actual: {current_displayed_team_index})...")
+                        _, next_pt = match_template_single(screen_cv, "next_formation")
+                    
+                        if next_pt:
+                            for i in range(clicks_needed):
+                                print(f"  -> Clic en Siguiente Formación ({i+1}/{clicks_needed})")
+                                simulate_human_click(window, next_pt[0], next_pt[1])
+                                time.sleep(0.4) # Espera pequeña para que cargue la visual
+                            current_displayed_team_index = current_team_index
+                        else:
+                            print("[RECORDS] Fin de la lista alcanzado (No se encontró el botón de 'next_formation').")
+                            print("[BOT] Cambiando de modo de juego para evitar bloqueo...")
+                            need_mode_switch = True
+                            current_mode = "phantimal" if current_mode == "battle" else "battle"
+                            mode_locked = True
+                            stage_attempt = 0
+                            battles_count = 0
+                            current_team_index = 0
+                            
+                            # Salir de la pantalla de preparación
+                            _, atras_pt = match_template_single(screen_cv, "atras")
+                            if atras_pt:
+                                simulate_human_click(window, atras_pt[0], atras_pt[1])
+                            time.sleep(config.LOOP_DELAY + 0.5)
+                            continue
                         
                 # Volver a buscar el botón 'copy' actualizado en pantalla y pulsarlo
                 # Capturamos de nuevo para seguridad de coordenadas
                 try:
                     new_screen = ImageGrab.grab(bbox=bbox, all_screens=True)
-                    _, fresh_copy_pt = match_template_single(new_screen, "copy")
+                    new_screen_cv = cv2.cvtColor(np.array(new_screen), cv2.COLOR_RGB2BGR)
+                    _, fresh_copy_pt = match_template_single(new_screen_cv, "copy")
                 except:
                     fresh_copy_pt = copy_pt
                     
@@ -404,19 +668,31 @@ def run_bot():
                     print(f"[BOT] Copiando formación seleccionada (Índice: {current_team_index})...")
                     simulate_human_click(window, fresh_copy_pt[0], fresh_copy_pt[1])
                     team_already_copied = True
-                    time.sleep(1.8) # Espera para aplicar héroes y que se cierre el panel
+                    time.sleep(0.9) # Espera para aplicar héroes y que se cierre el panel
                     
                 continue
                 
         # 5. MENÚ DE SELECCIÓN DE ETAPAS AFK (Phantimal vs Normal Battle)
         # Identificar si estamos en este menú buscando los botones challenge correspondientes
-        _, normal_chall_pt = match_template_single(screenshot, "normal_challenge")
-        _, phant_chall_pt = match_template_single(screenshot, "phantimal_challenge")
+        _, normal_chall_pt = match_template_single(screen_cv, "normal_challenge")
+        _, phant_chall_pt = match_template_single(screen_cv, "phantimal_challenge")
         
         if normal_chall_pt or phant_chall_pt:
             matched = True
             # Si estamos aquí, podemos apagar la bandera de cambio de modo ya que estamos en el selector
             need_mode_switch = False
+            
+            # Detectar si uno de los modos ya no está disponible (completado o no desbloqueado)
+            if normal_chall_pt and not phant_chall_pt:
+                if not mode_locked or current_mode != "battle":
+                    print("[MODO] Detectado que solo el modo BATTLE NORMAL está disponible (Phantimal completado o ausente). Bloqueando bot en modo Battle.")
+                    current_mode = "battle"
+                    mode_locked = True
+            elif phant_chall_pt and not normal_chall_pt:
+                if not mode_locked or current_mode != "phantimal":
+                    print("[MODO] Detectado que solo el modo PHANTIMAL CHALLENGE está disponible (Battle completado o ausente). Bloqueando bot en modo Phantimal.")
+                    current_mode = "phantimal"
+                    mode_locked = True
             
             if current_mode == "battle" and normal_chall_pt:
                 print("[BOT] Seleccionando modo BATTLE NORMAL...")
@@ -425,35 +701,44 @@ def run_bot():
                 print("[BOT] Seleccionando modo PHANTIMAL CHALLENGE...")
                 simulate_human_click(window, phant_chall_pt[0], phant_chall_pt[1])
             else:
-                # Si no está visible el botón correcto pero sí el otro, puede que haya que hacer clic en él
+                # Si el otro modo está bloqueado por atasco/fin de lista, no podemos usar fallback hacia él
+                if mode_locked:
+                    print("\n" + "="*60)
+                    print("[BLOQUEO] ALCANZADO EL FIN DE LA LISTA Y EL OTRO MODO NO ESTÁ DISPONIBLE.")
+                    print("El modo alternativo solicitado no se encuentra visible y el actual está bloqueado.")
+                    print("Deteniendo el bot para evitar un bucle de entrada/salida infinito.")
+                    print("="*60 + "\n")
+                    raise RuntimeError("Ambos modos de juego están bloqueados o el modo alternativo es inaccesible.")
+                
+                # Si no está bloqueado, hacemos fallback normal
                 fallback_pt = normal_chall_pt if normal_chall_pt else phant_chall_pt
                 print(f"[BOT] Entrando a la etapa disponible...")
                 simulate_human_click(window, fallback_pt[0], fallback_pt[1])
                 
-            time.sleep(config.LOOP_DELAY + 2.0)
+            time.sleep(config.LOOP_DELAY + 0.8)
             continue
                 
         # 6. ENTRADA GENERAL DESDE EL MENÚ DE INICIO / NAVEGACIÓN
         # Si vemos 'AFK_stages' en el menú de modos, hacemos clic
-        _, stages_pt = match_template_single(screenshot, "AFK_stages")
+        _, stages_pt = match_template_single(screen_cv, "AFK_stages")
         if stages_pt:
             matched = True
             print("[BOT] Entrando a AFK Stages...")
             simulate_human_click(window, stages_pt[0], stages_pt[1])
-            time.sleep(config.LOOP_DELAY + 1.0)
+            time.sleep(config.LOOP_DELAY + 0.4)
             continue
             
         # Si estamos en el lobby principal y vemos 'battle_modes', hacemos clic
-        _, modes_pt = match_template_single(screenshot, "battle_modes")
+        _, modes_pt = match_template_single(screen_cv, "battle_modes")
         if modes_pt:
             matched = True
             print("[BOT] Entrando al menú de Modos de Batalla...")
             simulate_human_click(window, modes_pt[0], modes_pt[1])
-            time.sleep(config.LOOP_DELAY + 1.0)
+            time.sleep(config.LOOP_DELAY + 0.4)
             continue
             
         # 7. SOPORTE DE POPUPS GENERALES / CERRAR RECOMPENSAS
-        _, cerrar_pt = match_template_single(screenshot, "cerrar")
+        _, cerrar_pt = match_template_single(screen_cv, "cerrar")
         if cerrar_pt and not battle_pt:
             matched = True
             print("[BOT] Cerrando popup detectado en pantalla...")
@@ -470,7 +755,7 @@ def run_bot():
                     scores = []
                     # Mostrar el puntaje de coincidencia de las plantillas más representativas
                     for name in ["battle_modes", "AFK_stages", "battle", "victory", "defeat", "copy", "records", "next_formation"]:
-                        conf, _ = match_template_single(screenshot, name)
+                        conf, _ = match_template_single(screen_cv, name)
                         scores.append(f"{name}: {conf:.2f}")
                     print(f"       -> Confianzas: {', '.join(scores)} (Umbral: {config.CONFIDENCE_THRESHOLD})")
         else:

@@ -26,6 +26,11 @@ Todas las capturas deben guardarse en la carpeta: `c:\Users\rubbe\Documents\AFK_
 | ![next_formation](images/next_formation.jpg) | `next_formation.jpg` | Flecha derecha en el menú de récords para pasar al siguiente equipo exitoso de la lista. |
 | ![copy](images/copy.jpg) | `copy.jpg` | Botón para copiar/aplicar la formación de héroes seleccionada actualmente en el panel. |
 | ![battle](images/battle.jpg) | `battle.jpg` | Botón verde grande de iniciar combate que se pulsa tras aplicar la formación. |
+| ![cancel_no-heroe](images/cancel_no-heroe.jpg) | `cancel_no-heroe.jpg` | Botón "Cancelar" en el aviso emergente que sale si la formación tiene héroes que no tienes. |
+| ![formations_btn](images/formations_btn.jpg) | `formations_btn.jpg` | Botón para abrir la lista de formaciones personalizadas guardadas (casco con engranaje). |
+| ![AFKST1](images/AFKST1.jpg) | `AFKST1.jpg` | Cabecera o etiqueta de texto de tu primera formación guardada ("AFKST1"). |
+| ![AFKST2](images/AFKST2.jpg) | `AFKST2.jpg` | Cabecera o etiqueta de texto de tu segunda formación guardada ("AFKST2"). |
+| ![use_btn](images/use_btn.jpg) | `use_btn.jpg` | Botón verde "Use" en la lista de formaciones personalizadas para aplicar la seleccionada. |
 
 ---
 

@@ -7,10 +7,11 @@ Este bot está diseñado en Python para automatizar el modo **AFK Stages (Fases 
 ## Características Principales
 
 1. **Estandarización de Resolución:** Fuerza automáticamente la ventana del juego a un tamaño estandarizado (`1616x939`) para garantizar que el reconocimiento de imágenes funcione de manera idéntica en cualquier PC (incluso si compartes el bot con un amigo).
-2. **Copiado de Equipos Secuencial:** Si sufres una derrota, el bot abre los récords, avanza con la flecha y copia secuencialmente el equipo del 1º al 5º jugador de la lista para reintentar la fase con otra sinergia.
-3. **Alternancia de Modos:** Cada 5 combates completados (sean victorias o derrotas), el bot regresa automáticamente al menú de etapas y cambia entre los modos **Battle** y **Phantimal Challenge** para mantener el progreso equilibrado en ambos.
+2. **Uso de Formaciones Mixtas y Propias:** Si sufres una derrota o te falta un héroe en la etapa actual, el bot sigue un ciclo inteligente de 20 intentos: prueba los equipos 1-5 de la comunidad, luego intercala tus dos formaciones personalizadas (**AFKST1** y **AFKST2**), vuelve a probar comunidad, y finalmente prueba los equipos 6-10 de la comunidad.
+3. **Alternancia y Bloqueo de Modos:** Cada 5 combates completados (sean victorias o derrotas), el bot regresa automáticamente al menú de etapas y cambia entre los modos **Battle** y **Phantimal Challenge**. Sin embargo, si en un nivel se acumulan 20 intentos fallidos (incluyendo comunitarias y personalizadas), el bot saltará al otro modo y **se bloqueará allí** para seguir progresando en el modo que sí funciona mientras ganes.
 4. **Registro de Ejecución (Logs):** Guarda un historial detallado en `bot.log` cada vez que se ejecuta, registrando clics, emparejamientos y resultados para facilitar el soporte en caso de fallos.
 5. **Lanzador Directo (`run_bot.bat`):** Permite iniciar el bot haciendo doble clic, solicitando automáticamente permisos de Administrador.
+6. **Evitación de Héroes Bloqueados:** Si la formación de la comunidad tiene héroes que no tienes en tu cuenta, el bot detecta la advertencia, hace clic en "Cancelar" y salta a la siguiente formación de la lista de forma automática (contando como intento).
 
 ---
 
@@ -51,4 +52,4 @@ Si en algún momento el bot no reconoce alguna imagen en su PC debido a configur
 
 * **Parada Rápida de Emergencia:** Si necesitas detener el bot a mitad de ejecución, mueve el cursor del ratón rápidamente a la **esquina superior izquierda de tu pantalla principal**. El bot se apagará de inmediato por seguridad.
 * **Parada Manual:** Puedes pulsar **`Ctrl + C`** en la ventana de comandos para cerrar el programa.
-
+* **Failsafe de Muro de Nivel (30 Derrotas):** Si el bot acumula 30 derrotas consecutivas globales sin ganar ninguna etapa (lo que significa que tus personajes son demasiado débiles para el nivel actual en ambos modos), se apagará automáticamente mostrando un aviso para que subas de nivel en la Resonancia.

@@ -51,3 +51,4 @@ Si en algún momento el bot no reconoce alguna imagen en su PC debido a configur
 
 * **Parada Rápida de Emergencia:** Si necesitas detener el bot a mitad de ejecución, mueve el cursor del ratón rápidamente a la **esquina superior izquierda de tu pantalla principal**. El bot se apagará de inmediato por seguridad.
 * **Parada Manual:** Puedes pulsar **`Ctrl + C`** en la ventana de comandos para cerrar el programa.
+

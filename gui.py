@@ -26,8 +26,9 @@ class AFKBotGUI(tk.Tk):
         super().__init__()
         
         # Configuración de la ventana (Modo Oscuro Astral)
-        self.title("AFK Journey Stages - Panel de Control")
-        self.geometry("830x630")
+        self.title("AFK Journey Stages - Panel de Control y Estadísticas")
+        self.geometry("1020x720")
+        self.minsize(960, 660)
         self.configure(bg="#0b0914") # Negro Púrpura Abisal
         self.resizable(True, True)
         
@@ -38,18 +39,23 @@ class AFKBotGUI(tk.Tk):
         
         self.bot_thread = None
         
+        # Variables de control para las opciones de la GUI
+        self.retry_formation_var = tk.BooleanVar(value=getattr(config, "RETRY_EACH_FORMATION", True))
+        self.use_custom_var = tk.BooleanVar(value=getattr(config, "USE_CUSTOM_FORMATIONS", True))
+        self.shutdown_var = tk.BooleanVar(value=getattr(config, "SHUTDOWN_ON_30_DEFEATS", False))
+        
         # Construir Interfaz Moderna
         self.create_widgets()
         
-        # Escuchar Logs
+        # Escuchar Logs y actualizar Métricas en vivo
         self.poll_logs()
 
     def create_widgets(self):
         # 1. CABECERA (Relicario de Oro y Púrpura Limpio)
         header_frame = tk.Frame(self, bg="#161329", bd=1, relief="ridge", highlightbackground="#d4af37", highlightthickness=1)
-        header_frame.pack(fill="x", padx=15, pady=12)
+        header_frame.pack(fill="x", padx=15, pady=10)
         header_frame.pack_propagate(False)
-        header_frame.configure(height=80)
+        header_frame.configure(height=70)
         
         # Título Limpio y Profesional
         title_label = tk.Label(
@@ -59,11 +65,11 @@ class AFKBotGUI(tk.Tk):
             fg="#f3e5ab", # Dorado Suave
             bg="#161329"
         )
-        title_label.pack(side="left", padx=20, pady=24)
+        title_label.pack(side="left", padx=20, pady=18)
         
         # Contenedor del Cristal de Estado
         self.status_frame = tk.Frame(header_frame, bg="#201c3d", bd=1, relief="solid", highlightbackground="#d4af37", highlightthickness=1, padx=12, pady=6)
-        self.status_frame.pack(side="right", padx=20, pady=20)
+        self.status_frame.pack(side="right", padx=20, pady=15)
         
         # Gema de Estado (Canvas con forma de Diamante / Cristal)
         self.status_gem = tk.Canvas(self.status_frame, width=16, height=16, bg="#201c3d", highlightthickness=0)
@@ -81,7 +87,7 @@ class AFKBotGUI(tk.Tk):
 
         # 2. SECCIÓN PRINCIPAL
         main_content = tk.Frame(self, bg="#0b0914")
-        main_content.pack(fill="both", expand=True, padx=15)
+        main_content.pack(fill="both", expand=True, padx=15, pady=(0, 10))
         
         # Columna Izquierda: Panel de Control
         control_frame = tk.LabelFrame(
@@ -94,11 +100,11 @@ class AFKBotGUI(tk.Tk):
             relief="solid",
             highlightbackground="#d4af37",
             highlightthickness=1,
-            padx=15, 
-            pady=15,
-            width=250
+            padx=12, 
+            pady=12,
+            width=260
         )
-        control_frame.pack(side="left", fill="both", expand=False, padx=(0, 10))
+        control_frame.pack(side="left", fill="y", expand=False, padx=(0, 10))
         control_frame.pack_propagate(False)
         
         # Botón INICIAR (Verde Bosque con Borde Dorado)
@@ -118,7 +124,7 @@ class AFKBotGUI(tk.Tk):
             height=2,
             command=self.start_bot
         )
-        self.btn_start.pack(fill="x", pady=(15, 10))
+        self.btn_start.pack(fill="x", pady=(10, 8))
         self.btn_start.bind("<Enter>", lambda e: self.btn_start.configure(bg="#2e7d32"))
         self.btn_start.bind("<Leave>", lambda e: self.btn_start.configure(bg="#1b5e20"))
         
@@ -140,28 +146,129 @@ class AFKBotGUI(tk.Tk):
             state="disabled",
             command=self.stop_bot
         )
-        self.btn_stop.pack(fill="x", pady=10)
+        self.btn_stop.pack(fill="x", pady=8)
         self.btn_stop.bind("<Enter>", lambda e: self.btn_stop.configure(bg="#991b1b") if self.btn_stop["state"] == "normal" else None)
         self.btn_stop.bind("<Leave>", lambda e: self.btn_stop.configure(bg="#7f1d1d") if self.btn_stop["state"] == "normal" else None)
         
-        # Recuadro de Configuración
+        # Opciones adicionales de Control (Checkbuttons)
+        self.chk_retries = tk.Checkbutton(
+            control_frame, 
+            text="5 Reintentos por Formación", 
+            variable=self.retry_formation_var,
+            command=self.toggle_retries,
+            font=("Segoe UI", 9, "bold"),
+            bg="#161329",
+            fg="#e1e1e6",
+            activebackground="#161329",
+            activeforeground="#e1e1e6",
+            selectcolor="#201c3d",
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2"
+        )
+        self.chk_retries.pack(anchor="w", pady=(12, 4))
+        
+        self.chk_custom = tk.Checkbutton(
+            control_frame, 
+            text="Usar Formaciones Guardadas", 
+            variable=self.use_custom_var,
+            command=self.toggle_custom_formations,
+            font=("Segoe UI", 9, "bold"),
+            bg="#161329",
+            fg="#e1e1e6",
+            activebackground="#161329",
+            activeforeground="#e1e1e6",
+            selectcolor="#201c3d",
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2"
+        )
+        self.chk_custom.pack(anchor="w", pady=4)
+        
+        self.chk_shutdown = tk.Checkbutton(
+            control_frame, 
+            text="Apagar PC tras 30 Derrotas", 
+            variable=self.shutdown_var,
+            command=self.toggle_shutdown,
+            font=("Segoe UI", 9, "bold"),
+            bg="#161329",
+            fg="#e1e1e6",
+            activebackground="#161329",
+            activeforeground="#e1e1e6",
+            selectcolor="#201c3d",
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2"
+        )
+        self.chk_shutdown.pack(anchor="w", pady=4)
+        
+        # Recuadro de Configuración / Información
         config_box = tk.Frame(control_frame, bg="#201c3d", bd=1, relief="solid", highlightbackground="#8c82b9", highlightthickness=1)
         config_box.pack(fill="x", side="bottom", pady=5)
         
         info_label = tk.Label(
             config_box, 
-            text=f"Ajustes de Velocidad:\n· Reacción: {config.CLICK_MIN_DELAY}s a {config.CLICK_MAX_DELAY}s\n· Análisis: {config.LOOP_DELAY}s\n\nFailsafe:\nMueve el ratón a la esquina\nsuperior izquierda para parar.",
-            font=("Segoe UI", 9), 
+            text=f"Ajustes:\n· Reacción: {config.CLICK_MIN_DELAY}s a {config.CLICK_MAX_DELAY}s\n· Subintentos: {config.SUBATTEMPTS_PER_FORMATION} por equipo\n· Ventana: {config.FORCE_WINDOW_SIZE[0]}x{config.FORCE_WINDOW_SIZE[1]}\n\nFailsafe:\nMueve el ratón a la esquina\nsuperior izquierda para parar.",
+            font=("Segoe UI", 8), 
             fg="#c7c3e2", 
             bg="#201c3d", 
             justify="left",
-            pady=10
+            pady=8
         )
-        info_label.pack(anchor="w", padx=5)
+        info_label.pack(anchor="w", padx=6)
 
-        # Columna Derecha: Terminal de Log
+        # Columna Derecha: Cuadrante de Estadísticas + Terminal de Logs
+        right_container = tk.Frame(main_content, bg="#0b0914")
+        right_container.pack(side="right", fill="both", expand=True)
+        
+        # 2.1 CUADRANTE DE ESTADÍSTICAS EN TIEMPO REAL
+        dashboard_frame = tk.LabelFrame(
+            right_container, 
+            text=" Métricas y Estado de Combate en Vivo ", 
+            font=("Segoe UI", 11, "bold"),
+            fg="#f3e5ab", 
+            bg="#161329", 
+            bd=1, 
+            relief="solid",
+            highlightbackground="#d4af37",
+            highlightthickness=1,
+            padx=8, 
+            pady=8
+        )
+        dashboard_frame.pack(fill="x", expand=False, pady=(0, 10))
+        
+        # Cuadrícula 2x3 de Tarjetas Estadísticas
+        cards_grid = tk.Frame(dashboard_frame, bg="#161329")
+        cards_grid.pack(fill="x", expand=True)
+        cards_grid.columnconfigure((0, 1, 2), weight=1, uniform="col")
+        
+        def make_card(parent, row, col, title_text):
+            card = tk.Frame(parent, bg="#201c3d", bd=1, relief="solid", highlightbackground="#d4af37", highlightthickness=1, padx=8, pady=6)
+            card.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
+            t_lbl = tk.Label(card, text=title_text, font=("Segoe UI", 8, "bold"), fg="#c7c3e2", bg="#201c3d")
+            t_lbl.pack(anchor="w")
+            v_lbl = tk.Label(card, text="--", font=("Segoe UI", 10, "bold"), fg="#f3e5ab", bg="#201c3d")
+            v_lbl.pack(anchor="w", pady=(2, 0))
+            s_lbl = tk.Label(card, text="--", font=("Segoe UI", 8), fg="#a5a0c8", bg="#201c3d")
+            s_lbl.pack(anchor="w")
+            return v_lbl, s_lbl
+
+        # Tarjeta 1: Modo y Estado
+        self.lbl_mode_value, self.lbl_state_value = make_card(cards_grid, 0, 0, "MODO Y ESTADO")
+        # Tarjeta 2: Progreso en Etapa
+        self.lbl_stage_attempt, self.lbl_sub_attempt = make_card(cards_grid, 0, 1, "INTENTOS DE ETAPA")
+        # Tarjeta 3: Formación en Uso
+        self.lbl_team_value, self.lbl_team_subinfo = make_card(cards_grid, 0, 2, "FORMACIÓN ACTIVA")
+        # Tarjeta 4: Duración de Batalla
+        self.lbl_duration_value, self.lbl_duration_sub = make_card(cards_grid, 1, 0, "DURACIÓN DE COMBATE")
+        # Tarjeta 5: Victorias / Derrotas
+        self.lbl_wl_value, self.lbl_consec_defeats = make_card(cards_grid, 1, 1, "BALANCE DE SESIÓN")
+        # Tarjeta 6: Etapas Superadas
+        self.lbl_stages_total, self.lbl_stages_breakdown = make_card(cards_grid, 1, 2, "ETAPAS SUPERADAS")
+
+        # 2.2 TERMINAL DE LOGS
         log_frame = tk.LabelFrame(
-            main_content, 
+            right_container, 
             text=" Historial de Procesos (Logs en tiempo real) ", 
             font=("Segoe UI", 11, "bold"),
             fg="#f3e5ab", 
@@ -170,10 +277,10 @@ class AFKBotGUI(tk.Tk):
             relief="solid",
             highlightbackground="#d4af37",
             highlightthickness=1,
-            padx=10, 
-            pady=10
+            padx=8, 
+            pady=8
         )
-        log_frame.pack(side="right", fill="both", expand=True)
+        log_frame.pack(fill="both", expand=True)
         
         self.terminal = scrolledtext.ScrolledText(
             log_frame, 
@@ -190,6 +297,7 @@ class AFKBotGUI(tk.Tk):
         
         # Mensaje de bienvenida limpio
         self.write_to_terminal("=== AFK STAGES BOT DASHBOARD INITIALIZED ===\nConsola de eventos lista. Haz clic en 'Iniciar Bot' para comenzar.\n\n")
+        self.update_dashboard()
 
     def draw_gem(self, color):
         self.status_gem.delete("all")
@@ -236,6 +344,71 @@ class AFKBotGUI(tk.Tk):
         self.draw_gem("#ffcc00")
         self.status_label.configure(text="DETENIENDO")
 
+    def toggle_retries(self):
+        config.RETRY_EACH_FORMATION = self.retry_formation_var.get()
+        self.write_to_terminal(f">>> Reintentos por formación (5 veces): {'ACTIVADO' if config.RETRY_EACH_FORMATION else 'DESACTIVADO'}\n")
+        self.update_dashboard()
+
+    def toggle_custom_formations(self):
+        config.USE_CUSTOM_FORMATIONS = self.use_custom_var.get()
+        self.write_to_terminal(f">>> Lógica de formaciones personalizadas: {'ACTIVADA' if config.USE_CUSTOM_FORMATIONS else 'DESACTIVADA'}\n")
+
+    def toggle_shutdown(self):
+        config.SHUTDOWN_ON_30_DEFEATS = self.shutdown_var.get()
+        self.write_to_terminal(f">>> Apagado de PC tras 30 derrotas consecutivas: {'ACTIVADO' if config.SHUTDOWN_ON_30_DEFEATS else 'DESACTIVADO'}\n")
+
+    def update_dashboard(self):
+        try:
+            stats = getattr(config, "BOT_STATS", {})
+            if not isinstance(stats, dict):
+                return
+                
+            mode = stats.get("mode", "battle")
+            if mode == "battle":
+                self.lbl_mode_value.configure(text="⚔️ BATTLE NORMAL", fg="#72f1b8")
+            else:
+                self.lbl_mode_value.configure(text="🐾 PHANTIMAL", fg="#ff79c6")
+                
+            bstate = stats.get("battle_state", "En espera")
+            state_colors = {
+                "En Batalla": "#00e5ff",
+                "Preparación": "#f3e5ab",
+                "¡Victoria!": "#50fa7b",
+                "Derrota": "#ff5555",
+                "Héroe Faltante": "#ffb86c",
+                "En espera": "#c7c3e2"
+            }
+            self.lbl_state_value.configure(text=f"• {bstate}", fg=state_colors.get(bstate, "#c7c3e2"))
+            
+            stg_att = stats.get("stage_attempt", 1)
+            sub_att = stats.get("sub_attempt", 1)
+            max_sub = stats.get("max_sub_attempts", 5) if getattr(config, "RETRY_EACH_FORMATION", True) else 1
+            self.lbl_stage_attempt.configure(text=f"Etapa: Intento {stg_att} / 20")
+            self.lbl_sub_attempt.configure(text=f"Subintento: {sub_att} / {max_sub}")
+            
+            team_inf = stats.get("team_info", "Pendiente")
+            self.lbl_team_value.configure(text=team_inf)
+            self.lbl_team_subinfo.configure(text="Secuencia de 20 formaciones" if getattr(config, "RETRY_EACH_FORMATION", True) else "Cambio en cada derrota")
+            
+            dur = stats.get("last_battle_duration", "0.0s")
+            self.lbl_duration_value.configure(text=f"⏱️ {dur}")
+            self.lbl_duration_sub.configure(text="Último combate registrado")
+            
+            vics = stats.get("victories_session", 0)
+            defs = stats.get("defeats_session", 0)
+            consec = stats.get("defeats_consecutive", 0)
+            self.lbl_wl_value.configure(text=f"🏆 {vics}  |  💀 {defs}")
+            consec_color = "#ff5555" if consec >= 20 else ("#ffb86c" if consec >= 10 else "#c7c3e2")
+            self.lbl_consec_defeats.configure(text=f"Consecutivas: {consec} / 30", fg=consec_color)
+            
+            stg_tot = stats.get("stages_total", 0)
+            stg_norm = stats.get("stages_normal", 0)
+            stg_phant = stats.get("stages_phantimal", 0)
+            self.lbl_stages_total.configure(text=f"Total: {stg_tot} superadas")
+            self.lbl_stages_breakdown.configure(text=f"Normal: {stg_norm}  |  Phantimal: {stg_phant}")
+        except Exception:
+            pass
+
     def bot_worker_loop(self):
         try:
             bot.run_bot()
@@ -253,6 +426,7 @@ class AFKBotGUI(tk.Tk):
         self.draw_gem("#ff3333")
         self.status_label.configure(text="APAGADO")
         self.write_to_terminal(">>> Bot detenido con éxito.\n")
+        self.update_dashboard()
 
     def poll_logs(self):
         try:
@@ -261,7 +435,8 @@ class AFKBotGUI(tk.Tk):
                 self.write_to_terminal(text)
         except queue.Empty:
             pass
-        self.after(100, self.poll_logs)
+        self.update_dashboard()
+        self.after(150, self.poll_logs)
 
     def destroy(self):
         sys.stdout = self.old_stdout

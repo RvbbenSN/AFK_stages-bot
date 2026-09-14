@@ -108,7 +108,8 @@ TEMPLATE_THRESHOLDS = {
     "use_btn": 0.80,
     "battle_modes": 0.70,
     "AFK_stages": 0.70,
-    "green_tick": 0.80
+    "green_tick": 0.80,
+    "tap_to_exit": 0.80
 }
 
 def match_template_single(screen_cv, template_name):
@@ -171,6 +172,14 @@ def get_team_for_attempt(stage_attempt):
       - team_type: "community" o "custom"
       - team_value: índice entero (0-9) para community, o nombre de plantilla (str) para custom
     """
+    # Si la opción de usar formaciones personalizadas está desactivada
+    if not getattr(config, "USE_CUSTOM_FORMATIONS", True):
+        # Mapear de 5 en 5 sobre los equipos de comunidad
+        if stage_attempt < 10:
+            return "community", stage_attempt % 5
+        else:
+            return "community", 5 + ((stage_attempt - 10) % 5)
+
     # Intentos 1 al 5 (stage_attempt 0-4): Comunidad 1-5
     if stage_attempt in [0, 1, 2, 3, 4]:
         return "community", stage_attempt
@@ -193,6 +202,28 @@ def get_team_for_attempt(stage_attempt):
     # Intento 20 (stage_attempt 19): Comunidad 6
     else:
         return "community", 5
+
+def update_bot_stats(mode=None, stage_attempt=None, sub_attempt=None, max_sub_attempts=None,
+                     team_info=None, battle_state=None, last_battle_duration=None,
+                     victories_session=None, defeats_session=None, defeats_consecutive=None,
+                     stages_normal=None, stages_phantimal=None, stages_total=None):
+    """Actualiza de forma segura el diccionario global BOT_STATS para la GUI en tiempo real."""
+    stats = getattr(config, "BOT_STATS", None)
+    if not isinstance(stats, dict):
+        return
+    if mode is not None: stats["mode"] = mode
+    if stage_attempt is not None: stats["stage_attempt"] = stage_attempt
+    if sub_attempt is not None: stats["sub_attempt"] = sub_attempt
+    if max_sub_attempts is not None: stats["max_sub_attempts"] = max_sub_attempts
+    if team_info is not None: stats["team_info"] = team_info
+    if battle_state is not None: stats["battle_state"] = battle_state
+    if last_battle_duration is not None: stats["last_battle_duration"] = str(last_battle_duration)
+    if victories_session is not None: stats["victories_session"] = victories_session
+    if defeats_session is not None: stats["defeats_session"] = defeats_session
+    if defeats_consecutive is not None: stats["defeats_consecutive"] = defeats_consecutive
+    if stages_normal is not None: stats["stages_normal"] = stages_normal
+    if stages_phantimal is not None: stats["stages_phantimal"] = stages_phantimal
+    if stages_total is not None: stats["stages_total"] = stages_total
 
 def simulate_human_click(window, rel_x, rel_y):
     """Realiza un clic con desviación aleatoria, movimiento suave y retención del botón para juegos DirectX."""
@@ -235,7 +266,8 @@ def run_bot():
         "battle_modes", "AFK_stages", "normal_challenge", "phantimal_challenge",
         "records", "next_formation", "copy", "battle", "victory",
         "continuar_normal", "continuar_phantimal", "defeat", "retry", "atras",
-        "cancel_no-heroe", "formations_btn", "AFKST1", "AFKST2", "use_btn", "green_tick"
+        "cancel_no-heroe", "formations_btn", "AFKST1", "AFKST2", "use_btn", "green_tick",
+        "tap_to_exit"
     ]
     
     print("[INFO] Comprobando archivos de imágenes en images/:")
@@ -271,12 +303,16 @@ def run_bot():
     stages_cleared_normal = 0          # Contador de victorias normales en la sesión
     stages_cleared_phantimal = 0       # Contador de victorias phantimal en la sesión
     stage_attempt = 0                  # Intentos en la etapa actual en este modo (límite 20)
+    sub_attempt = 0                    # Subintentos con la formación actual (0 a 4)
     mode_locked = False                # Si está bloqueado en un modo por haber fallado 20 veces en el otro
     current_displayed_team_index = 0   # Índice de formación que está actualmente visible en pantalla
     team_type = "community"            # "community" o "custom"
     custom_name = None                 # Nombre de la formación personalizada ("AFKST1" o "AFKST2")
-    
-    
+    in_battle = False                  # Bandera de combate activo
+    battle_start_time = None           # Marca de tiempo de inicio del combate actual
+    last_battle_duration = "0.0s"      # Duración de la última batalla
+    victories_session = 0              # Victorias totales en sesión
+    defeats_session = 0                # Derrotas totales en sesión
     
     print(f"\n[ESTADO INICIAL] Modo de inicio: {current_mode.upper()} | Equipo inicial: #{current_team_index + 1}")
     
@@ -317,7 +353,6 @@ def run_bot():
                     except Exception as e:
                         print(f"[ADVERTENCIA] No se pudo redimensionar la ventana: {e}")
 
-            
         # Capturar el monitor delimitando el área del juego (ROI perfecto para múltiples monitores)
         # Pillow utiliza coordenadas absolutas: (left, top, right, bottom)
         bbox = (window.left, window.top, window.left + window.width, window.top + window.height)
@@ -335,30 +370,66 @@ def run_bot():
         if team_type == "community":
             current_team_index = team_value
             custom_name = None
+            current_team_info = f"Comunidad #{team_value + 1}"
         else:
             current_team_index = 0
             custom_name = team_value
+            current_team_info = f"Propia {team_value}"
+
+        max_subs = getattr(config, "SUBATTEMPTS_PER_FORMATION", 5) if getattr(config, "RETRY_EACH_FORMATION", True) else 1
+        update_bot_stats(
+            mode=current_mode,
+            stage_attempt=stage_attempt + 1,
+            sub_attempt=sub_attempt + 1,
+            max_sub_attempts=max_subs,
+            team_info=current_team_info,
+            defeats_consecutive=consecutive_defeats,
+            stages_normal=stages_cleared_normal,
+            stages_phantimal=stages_cleared_phantimal,
+            stages_total=stages_cleared_normal + stages_cleared_phantimal,
+            victories_session=victories_session,
+            defeats_session=defeats_session,
+            last_battle_duration=last_battle_duration
+        )
 
         # 1. VERIFICAR VICTORIA
         _, victory_pt = match_template_single(screen_cv, "victory")
         if victory_pt:
             matched = True
-            print(f"[VICTORIA] ¡Etapa superada con éxito!")
+            in_battle = False
+            if battle_start_time:
+                last_battle_duration = f"{round(time.time() - battle_start_time, 1)}s"
+                battle_start_time = None
+            print(f"[VICTORIA] ¡Etapa superada con éxito! (Duración del combate: {last_battle_duration})")
             
             # Incrementar contadores de victorias de la sesión
+            victories_session += 1
             if current_mode == "battle":
                 stages_cleared_normal += 1
             else:
                 stages_cleared_phantimal += 1
-            print(f"[ESTADÍSTICAS] Superadas en esta sesión -> Normal: {stages_cleared_normal} | Phantimal: {stages_cleared_phantimal}")
+            print(f"[ESTADÍSTICAS] Superadas en esta sesión -> Normal: {stages_cleared_normal} | Phantimal: {stages_cleared_phantimal} (Total: {stages_cleared_normal + stages_cleared_phantimal})")
             
             # Resetear contadores de fallos y desbloquear modos
             current_team_index = 0
             consecutive_defeats = 0
             stage_attempt = 0
+            sub_attempt = 0
             mode_locked = False
             team_already_copied = False
             current_displayed_team_index = 0
+            
+            update_bot_stats(
+                battle_state="¡Victoria!",
+                last_battle_duration=last_battle_duration,
+                victories_session=victories_session,
+                defeats_consecutive=0,
+                stage_attempt=1,
+                sub_attempt=1,
+                stages_normal=stages_cleared_normal,
+                stages_phantimal=stages_cleared_phantimal,
+                stages_total=stages_cleared_normal + stages_cleared_phantimal
+            )
             
             # Incrementar contador de batallas e intercalar si llegamos a 5 (solo si el modo no está bloqueado)
             battles_count += 1
@@ -395,20 +466,50 @@ def run_bot():
         _, defeat_pt = match_template_single(screen_cv, "defeat")
         if defeat_pt:
             matched = True
+            in_battle = False
+            if battle_start_time:
+                last_battle_duration = f"{round(time.time() - battle_start_time, 1)}s"
+                battle_start_time = None
             consecutive_defeats += 1
-            stage_attempt += 1
-            battles_count += 1
-            team_already_copied = False
+            defeats_session += 1
             current_displayed_team_index = 0  # El panel se cierra por la derrota, así que se reinicia a 0
-            print(f"[DERROTA] Falla en la etapa. Intento #{stage_attempt}/20 en este nivel. (Derrotas globales consecutivas: {consecutive_defeats}/30)")
+            
+            # Lógica de subintentos por formación
+            retry_enabled = getattr(config, "RETRY_EACH_FORMATION", True)
+            max_subs = getattr(config, "SUBATTEMPTS_PER_FORMATION", 5)
+            
+            if retry_enabled and (sub_attempt + 1) < max_subs:
+                sub_attempt += 1
+                team_already_copied = True  # La formación sigue colocada en el tablero, no hace falta reabrir menús
+                print(f"[DERROTA] Falla en la etapa. Reintentando formación (Subintento #{sub_attempt + 1}/{max_subs} | Intento #{stage_attempt + 1}/20). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
+            else:
+                sub_attempt = 0
+                stage_attempt += 1
+                battles_count += 1
+                team_already_copied = False
+                print(f"[DERROTA] Falla en la etapa tras agotar subintentos. Pasando a la siguiente formación (Intento #{stage_attempt + 1}/20 en este nivel). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
+            
+            update_bot_stats(
+                battle_state="Derrota",
+                last_battle_duration=last_battle_duration,
+                defeats_session=defeats_session,
+                defeats_consecutive=consecutive_defeats,
+                stage_attempt=stage_attempt + 1,
+                sub_attempt=sub_attempt + 1
+            )
             
             # Failsafe para detener si acumulamos 30 derrotas consecutivas globales sin victoria
             if consecutive_defeats >= 30:
                 print("\n" + "="*60)
                 print("[FAILSAFE] SE HAN SUCEDIDO 30 DERROTAS CONSECUTIVAS GLOBALES.")
                 print("Es probable que tus personajes necesiten subir de nivel en la Resonancia.")
-                print("Deteniendo el bot para evitar un bucle infinito.")
-                print("="*60 + "\n")
+                if getattr(config, "SHUTDOWN_ON_30_DEFEATS", False):
+                    print("[FAILSAFE] APAGANDO EL ORDENADOR EN 60 SEGUNDOS...")
+                    print("="*60 + "\n")
+                    os.system("shutdown /s /t 60")
+                else:
+                    print("Deteniendo el bot para evitar un bucle infinito.")
+                    print("="*60 + "\n")
                 raise RuntimeError("Límite de 30 derrotas consecutivas globales alcanzado.")
             
             # Comprobar si debemos alternar de modo por límite de 20 intentos en la misma etapa
@@ -418,22 +519,26 @@ def run_bot():
                 current_mode = "phantimal" if current_mode == "battle" else "battle"
                 mode_locked = True
                 stage_attempt = 0
+                sub_attempt = 0
                 battles_count = 0
                 current_team_index = 0
-            # Comprobar si debemos alternar por límite de 5 combates (solo si el modo no está bloqueado)
+                team_already_copied = False
+            # Comprobar si debemos alternar por límite de 5 formaciones (solo si el modo no está bloqueado)
             elif battles_count >= 5 and not mode_locked:
-                print("[MODO] Se han completado 5 batallas en este modo. Rotando al modo alternativo...")
+                print("[MODO] Se han completado 5 formaciones en este modo. Rotando al modo alternativo...")
                 need_mode_switch = True
                 battles_count = 0
                 current_team_index = 0
                 stage_attempt = 0
+                sub_attempt = 0
+                team_already_copied = False
                 current_mode = "phantimal" if current_mode == "battle" else "battle"
             else:
                 next_type, next_value = get_team_for_attempt(stage_attempt)
                 if next_type == "community":
-                    print(f"[BOT] Configurado para usar formación de comunidad #{next_value + 1}")
+                    print(f"[BOT] Configurado para usar formación de comunidad #{next_value + 1} (Subintento #{sub_attempt + 1}/{max_subs if retry_enabled else 1})")
                 else:
-                    print(f"[BOT] Configurado para usar formación personalizada: {next_value}")
+                    print(f"[BOT] Configurado para usar formación personalizada: {next_value} (Subintento #{sub_attempt + 1}/{max_subs if retry_enabled else 1})")
                 
             # Buscar el botón de reintentar
             _, retry_pt = match_template_single(screen_cv, "retry")
@@ -468,8 +573,16 @@ def run_bot():
             simulate_human_click(window, no_hero_pt[0], no_hero_pt[1])
             
             # Avanzar al siguiente intento para el próximo ciclo
+            sub_attempt = 0
             stage_attempt += 1
+            battles_count += 1
             team_already_copied = False
+            
+            update_bot_stats(
+                battle_state="Héroe Faltante",
+                stage_attempt=stage_attempt + 1,
+                sub_attempt=1
+            )
             
             # Comprobar si debemos alternar de modo por límite de 20 intentos en la misma etapa
             if stage_attempt >= 20:
@@ -535,10 +648,14 @@ def run_bot():
             if team_already_copied:
                 if battle_pt:
                     if team_type == "community":
-                        print(f"[BOT] Equipo ya configurado. Iniciando la batalla (Intento #{current_team_index + 1} en esta etapa)...")
+                        print(f"[BOT] Equipo ya configurado. Iniciando la batalla (Intento #{stage_attempt + 1} | Subintento #{sub_attempt + 1} en esta etapa)...")
                     else:
-                        print(f"[BOT] Equipo ya configurado. Iniciando la batalla (Intento con formación personalizada {custom_name})...")
+                        print(f"[BOT] Equipo ya configurado. Iniciando la batalla (Intento con formación personalizada {custom_name} | Subintento #{sub_attempt + 1})...")
                     simulate_human_click(window, battle_pt[0], battle_pt[1])
+                    in_battle = True
+                    battle_start_time = time.time()
+                    no_match_count = 0
+                    update_bot_stats(battle_state="En Batalla")
                     time.sleep(config.LOOP_DELAY + 1.0)
                 else:
                     print("[ADVERTENCIA] Intentando iniciar batalla pero el botón 'battle' no es visible.")
@@ -614,6 +731,10 @@ def run_bot():
                         print("[ADVERTENCIA] Botón de registros no encontrado. Iniciando combate por defecto...")
                         if battle_pt:
                             simulate_human_click(window, battle_pt[0], battle_pt[1])
+                            in_battle = True
+                            battle_start_time = time.time()
+                            no_match_count = 0
+                            update_bot_stats(battle_state="En Batalla")
                             time.sleep(config.LOOP_DELAY + 0.8)
                     continue
                 else:
@@ -746,9 +867,27 @@ def run_bot():
             time.sleep(config.LOOP_DELAY)
             continue
             
+        _, tap_exit_pt = match_template_single(screen_cv, "tap_to_exit")
+        if tap_exit_pt:
+            matched = True
+            print("[BOT] Cerrando pantalla mediante 'Tap to exit'...")
+            simulate_human_click(window, tap_exit_pt[0], tap_exit_pt[1])
+            time.sleep(config.LOOP_DELAY + 0.5)
+            continue
+            
         # Espera pasiva del bucle si no hay coincidencias
         if not matched:
             no_match_count += 1
+            
+            # Lógica de clic de escape seguro para popups/banners persistentes de las 2 AM
+            # IMPORTANTE: Desactivado durante el combate para no alterar AUTO ni abrir pausas
+            if not in_battle and no_match_count >= 15 and no_match_count % 10 == 0:
+                print(f"[BOT] Alerta: {no_match_count} ciclos sin coincidencias. Intentando clic de escape seguro...")
+                # Clic en la zona muerta media-izquierda (15% ancho, 50% alto) para cerrar posibles diálogos
+                simulate_human_click(window, int(window.width * 0.15), int(window.height * 0.5))
+                time.sleep(config.LOOP_DELAY + 0.5)
+                continue # Volver a capturar inmediatamente
+                
             if no_match_count % 5 == 0:
                 print(f"[INFO] Buscando coincidencias... (Ciclo {no_match_count} sin clics)")
                 if config.DEBUG:

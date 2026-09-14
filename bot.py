@@ -109,7 +109,9 @@ TEMPLATE_THRESHOLDS = {
     "battle_modes": 0.70,
     "AFK_stages": 0.70,
     "green_tick": 0.80,
-    "tap_to_exit": 0.80
+    "tap_to_exit": 0.80,
+    "auto_off": 0.86,
+    "auto_on": 0.86
 }
 
 def match_template_single(screen_cv, template_name):
@@ -163,6 +165,23 @@ def match_template_multi(screen_cv, template_name):
             points.append((cx, cy))
             
     return points
+
+def check_auto_skills_status(screen_cv):
+    """
+    Comprueba el estado del botón de lanzamiento automático de habilidades durante el combate.
+    Retorna (status, point) donde:
+      - status: 'OFF' (icono gris apagado), 'ON' (icono dorado encendido), o 'UNKNOWN'
+      - point: (rel_x, rel_y) para hacer clic en el botón si está apagado
+    """
+    score_off, pt_off = match_template_single(screen_cv, "auto_off")
+    score_on, pt_on = match_template_single(screen_cv, "auto_on")
+
+    # Si detectamos el icono apagado con buena confianza y supera al encendido
+    if score_off >= 0.86 and score_off > (score_on + 0.04):
+        return "OFF", pt_off
+    elif score_on >= 0.86:
+        return "ON", pt_on
+    return "UNKNOWN", None
 
 def get_team_for_attempt(stage_attempt, max_known_community=None):
     """
@@ -294,7 +313,7 @@ def run_bot():
         "records", "next_formation", "copy", "battle", "victory",
         "continuar_normal", "continuar_phantimal", "defeat", "retry", "atras",
         "cancel_no-heroe", "formations_btn", "AFKST1", "AFKST2", "use_btn", "green_tick",
-        "tap_to_exit"
+        "tap_to_exit", "auto_off", "auto_on"
     ]
     
     print("[INFO] Comprobando archivos de imágenes en images/:")
@@ -337,6 +356,8 @@ def run_bot():
     team_type = "community"            # "community" o "custom"
     custom_name = None                 # Nombre de la formación personalizada ("AFKST1" o "AFKST2")
     in_battle = False                  # Bandera de combate activo
+    auto_verified_on = False           # Bandera para evitar chequeos redundantes de auto-habilidades
+    auto_was_disabled = False          # Si se detectó apagado en el combate actual (no contará intento si pierde)
     battle_start_time = None           # Marca de tiempo de inicio del combate actual
     last_battle_duration = "0.0s"      # Duración de la última batalla
     victories_session = 0              # Victorias totales en sesión
@@ -430,6 +451,10 @@ def run_bot():
         if victory_pt:
             matched = True
             in_battle = False
+            auto_verified_on = False
+            if auto_was_disabled:
+                print("[AUTO-SKILLS] ¡Victoria obtenida a pesar de que el auto-lanzamiento estuvo apagado al inicio!")
+                auto_was_disabled = False
             if battle_start_time:
                 last_battle_duration = f"{round(time.time() - battle_start_time, 1)}s"
                 battle_start_time = None
@@ -502,80 +527,93 @@ def run_bot():
         if defeat_pt:
             matched = True
             in_battle = False
+            auto_verified_on = False
             if battle_start_time:
                 last_battle_duration = f"{round(time.time() - battle_start_time, 1)}s"
                 battle_start_time = None
-            consecutive_defeats += 1
-            defeats_session += 1
             current_displayed_team_index = 0  # El panel se cierra por la derrota, así que se reinicia a 0
             
-            # Lógica de subintentos por formación según fase (barrido rápido vs insistencia)
-            if (sub_attempt + 1) < effective_max_subs:
-                sub_attempt += 1
-                team_already_copied = True  # La formación sigue colocada en el tablero, no hace falta reabrir menús
-                print(f"[DERROTA] Falla en la etapa. Reintentando formación (Subintento #{sub_attempt + 1}/{effective_max_subs} | Intento #{stage_attempt + 1}/20). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
+            if auto_was_disabled:
+                print(f"[AUTO-SKILLS] Derrota detectada tras reactivar auto-habilidades ({last_battle_duration}).")
+                print("  -> REINTENTANDO la misma formación SIN CONTAR este intento ni sumar derrota.")
+                auto_was_disabled = False
+                team_already_copied = True  # Mantenemos el equipo puesto en el tablero
+                
+                update_bot_stats(
+                    battle_state="Reintento Auto-Skills",
+                    last_battle_duration=last_battle_duration
+                )
             else:
-                sub_attempt = 0
-                stage_attempt += 1
-                battles_count += 1
-                team_already_copied = False
-                phase_msg = "Fin de barrido para esta formación" if is_fast_sweep else "Subintentos agotados"
-                print(f"[DERROTA] Falla en la etapa ({phase_msg}). Pasando a la siguiente formación (Intento #{stage_attempt + 1}/20 en este nivel). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
-            
-            update_bot_stats(
-                battle_state="Derrota",
-                last_battle_duration=last_battle_duration,
-                defeats_session=defeats_session,
-                defeats_consecutive=consecutive_defeats,
-                stage_attempt=stage_attempt + 1,
-                sub_attempt=sub_attempt + 1
-            )
-            
-            # Failsafe para detener si acumulamos 30 derrotas consecutivas globales sin victoria
-            if consecutive_defeats >= 30:
-                print("\n" + "="*60)
-                print("[FAILSAFE] SE HAN SUCEDIDO 30 DERROTAS CONSECUTIVAS GLOBALES.")
-                print("Es probable que tus personajes necesiten subir de nivel en la Resonancia.")
-                if getattr(config, "SHUTDOWN_ON_30_DEFEATS", False):
-                    print("[FAILSAFE] APAGANDO EL ORDENADOR EN 60 SEGUNDOS...")
-                    print("="*60 + "\n")
-                    os.system("shutdown /s /t 60")
+                consecutive_defeats += 1
+                defeats_session += 1
+                
+                # Lógica de subintentos por formación según fase (barrido rápido vs insistencia)
+                if (sub_attempt + 1) < effective_max_subs:
+                    sub_attempt += 1
+                    team_already_copied = True  # La formación sigue colocada en el tablero, no hace falta reabrir menús
+                    print(f"[DERROTA] Falla en la etapa. Reintentando formación (Subintento #{sub_attempt + 1}/{effective_max_subs} | Intento #{stage_attempt + 1}/20). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
                 else:
-                    print("Deteniendo el bot para evitar un bucle infinito.")
-                    print("="*60 + "\n")
-                raise RuntimeError("Límite de 30 derrotas consecutivas globales alcanzado.")
-            
-            # Comprobar si debemos alternar de modo por límite de 20 intentos en la misma etapa
-            if stage_attempt >= 20:
-                print("[MODO] Se han realizado 20 intentos fallidos en este nivel. Cambiando al otro modo y bloqueándolo allí...")
-                need_mode_switch = True
-                current_mode = "phantimal" if current_mode == "battle" else "battle"
-                mode_locked = True
-                stage_attempt = 0
-                sub_attempt = 0
-                battles_count = 0
-                current_team_index = 0
-                team_already_copied = False
-                max_known_community_teams = None
-            # Comprobar si debemos alternar por límite de 5 formaciones (solo si el modo no está bloqueado)
-            elif battles_count >= 5 and not mode_locked:
-                print("[MODO] Se han completado 5 formaciones en este modo. Rotando al modo alternativo...")
-                need_mode_switch = True
-                battles_count = 0
-                current_team_index = 0
-                stage_attempt = 0
-                sub_attempt = 0
-                team_already_copied = False
-                max_known_community_teams = None
-                current_mode = "phantimal" if current_mode == "battle" else "battle"
-            else:
-                next_type, next_value, next_sweep = get_team_for_attempt(stage_attempt, max_known_community_teams)
-                next_phase = "Barrido Rápido" if next_sweep else "Insistencia"
-                next_subs = 1 if (next_sweep or not retry_enabled) else getattr(config, "SUBATTEMPTS_PER_FORMATION", 5)
-                if next_type == "community":
-                    print(f"[BOT] Siguiente formación: Comunidad #{next_value + 1} [{next_phase}] (Subintento #{sub_attempt + 1}/{next_subs})")
+                    sub_attempt = 0
+                    stage_attempt += 1
+                    battles_count += 1
+                    team_already_copied = False
+                    phase_msg = "Fin de barrido para esta formación" if is_fast_sweep else "Subintentos agotados"
+                    print(f"[DERROTA] Falla en la etapa ({phase_msg}). Pasando a la siguiente formación (Intento #{stage_attempt + 1}/20 en este nivel). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
+                
+                update_bot_stats(
+                    battle_state="Derrota",
+                    last_battle_duration=last_battle_duration,
+                    defeats_session=defeats_session,
+                    defeats_consecutive=consecutive_defeats,
+                    stage_attempt=stage_attempt + 1,
+                    sub_attempt=sub_attempt + 1
+                )
+                
+                # Failsafe para detener si acumulamos 30 derrotas consecutivas globales sin victoria
+                if consecutive_defeats >= 30:
+                    print("\n" + "="*60)
+                    print("[FAILSAFE] SE HAN SUCEDIDO 30 DERROTAS CONSECUTIVAS GLOBALES.")
+                    print("Es probable que tus personajes necesiten subir de nivel en la Resonancia.")
+                    if getattr(config, "SHUTDOWN_ON_30_DEFEATS", False):
+                        print("[FAILSAFE] APAGANDO EL ORDENADOR EN 60 SEGUNDOS...")
+                        print("="*60 + "\n")
+                        os.system("shutdown /s /t 60")
+                    else:
+                        print("Deteniendo el bot para evitar un bucle infinito.")
+                        print("="*60 + "\n")
+                    raise RuntimeError("Límite de 30 derrotas consecutivas globales alcanzado.")
+                
+                # Comprobar si debemos alternar de modo por límite de 20 intentos en la misma etapa
+                if stage_attempt >= 20:
+                    print("[MODO] Se han realizado 20 intentos fallidos en este nivel. Cambiando al otro modo y bloqueándolo allí...")
+                    need_mode_switch = True
+                    current_mode = "phantimal" if current_mode == "battle" else "battle"
+                    mode_locked = True
+                    stage_attempt = 0
+                    sub_attempt = 0
+                    battles_count = 0
+                    current_team_index = 0
+                    team_already_copied = False
+                    max_known_community_teams = None
+                # Comprobar si debemos alternar por límite de 5 formaciones (solo si el modo no está bloqueado)
+                elif battles_count >= 5 and not mode_locked:
+                    print("[MODO] Se han completado 5 formaciones en este modo. Rotando al modo alternativo...")
+                    need_mode_switch = True
+                    battles_count = 0
+                    current_team_index = 0
+                    stage_attempt = 0
+                    sub_attempt = 0
+                    team_already_copied = False
+                    max_known_community_teams = None
+                    current_mode = "phantimal" if current_mode == "battle" else "battle"
                 else:
-                    print(f"[BOT] Siguiente formación: Personalizada {next_value} [{next_phase}] (Subintento #{sub_attempt + 1}/{next_subs})")
+                    next_type, next_value, next_sweep = get_team_for_attempt(stage_attempt, max_known_community_teams)
+                    next_phase = "Barrido Rápido" if next_sweep else "Insistencia"
+                    next_subs = 1 if (next_sweep or not retry_enabled) else getattr(config, "SUBATTEMPTS_PER_FORMATION", 5)
+                    if next_type == "community":
+                        print(f"[BOT] Siguiente formación: Comunidad #{next_value + 1} [{next_phase}] (Subintento #{sub_attempt + 1}/{next_subs})")
+                    else:
+                        print(f"[BOT] Siguiente formación: Personalizada {next_value} [{next_phase}] (Subintento #{sub_attempt + 1}/{next_subs})")
                 
             # Buscar el botón de reintentar
             _, retry_pt = match_template_single(screen_cv, "retry")
@@ -600,6 +638,24 @@ def run_bot():
                 
             time.sleep(config.LOOP_DELAY + 0.8)
             continue
+            
+        # 2.2. VERIFICACIÓN DE AUTO-LANZAMIENTO DE HABILIDADES DURANTE EL COMBATE
+        if in_battle and not auto_verified_on:
+            auto_status, auto_pt = check_auto_skills_status(screen_cv)
+            if auto_status == "OFF":
+                matched = True
+                print("[AUTO-SKILLS] ¡ALERTA! El lanzamiento automático de habilidades está DESACTIVADO (icono gris).")
+                print("  -> Haciendo clic en el icono para activarlo...")
+                simulate_human_click(window, auto_pt[0], auto_pt[1])
+                auto_was_disabled = True
+                time.sleep(0.4)
+                continue
+            elif auto_status == "ON":
+                if auto_was_disabled:
+                    print("[AUTO-SKILLS] Activación confirmada (icono dorado). Si la partida se pierde, se reintentará sin contar el intento.")
+                elif config.DEBUG:
+                    print("[AUTO-SKILLS] Lanzamiento automático de habilidades verificado (ACTIVADO).")
+                auto_verified_on = True
             
         # 2.5. VERIFICAR HÉROE NO DISPONIBLE (Falta personaje en la formación copiada)
         _, no_hero_pt = match_template_single(screen_cv, "cancel_no-heroe")
@@ -695,6 +751,7 @@ def run_bot():
                         print(f"[BOT] Equipo ya configurado. Iniciando la batalla (Intento con formación personalizada {custom_name} | Subintento #{sub_attempt + 1})...")
                     simulate_human_click(window, battle_pt[0], battle_pt[1])
                     in_battle = True
+                    auto_verified_on = False
                     battle_start_time = time.time()
                     no_match_count = 0
                     update_bot_stats(battle_state="En Batalla")
@@ -774,6 +831,7 @@ def run_bot():
                         if battle_pt:
                             simulate_human_click(window, battle_pt[0], battle_pt[1])
                             in_battle = True
+                            auto_verified_on = False
                             battle_start_time = time.time()
                             no_match_count = 0
                             update_bot_stats(battle_state="En Batalla")
@@ -869,6 +927,9 @@ def run_bot():
         
         if normal_chall_pt or phant_chall_pt:
             matched = True
+            in_battle = False
+            auto_verified_on = False
+            auto_was_disabled = False
             # Si estamos aquí, podemos apagar la bandera de cambio de modo ya que estamos en el selector
             need_mode_switch = False
             

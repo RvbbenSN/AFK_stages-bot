@@ -41,6 +41,7 @@ class AFKBotGUI(tk.Tk):
         
         # Variables de control para las opciones de la GUI
         self.retry_formation_var = tk.BooleanVar(value=getattr(config, "RETRY_EACH_FORMATION", True))
+        self.subattempts_var = tk.IntVar(value=getattr(config, "SUBATTEMPTS_PER_FORMATION", 5))
         self.use_custom_var = tk.BooleanVar(value=getattr(config, "USE_CUSTOM_FORMATIONS", True))
         self.shutdown_var = tk.BooleanVar(value=getattr(config, "SHUTDOWN_ON_30_DEFEATS", False))
         
@@ -153,7 +154,7 @@ class AFKBotGUI(tk.Tk):
         # Opciones adicionales de Control (Checkbuttons)
         self.chk_retries = tk.Checkbutton(
             control_frame, 
-            text="5 Reintentos por Formación", 
+            text="Reintentar cada Formación", 
             variable=self.retry_formation_var,
             command=self.toggle_retries,
             font=("Segoe UI", 9, "bold"),
@@ -166,7 +167,38 @@ class AFKBotGUI(tk.Tk):
             highlightthickness=0,
             cursor="hand2"
         )
-        self.chk_retries.pack(anchor="w", pady=(12, 4))
+        self.chk_retries.pack(anchor="w", pady=(10, 2))
+        
+        # Deslizador de Subintentos por Formación (Scale)
+        self.slider_frame = tk.Frame(control_frame, bg="#161329")
+        self.slider_frame.pack(fill="x", padx=(16, 5), pady=(0, 6))
+        
+        self.lbl_subattempts_val = tk.Label(
+            self.slider_frame, 
+            text=f"Subintentos por equipo: {config.SUBATTEMPTS_PER_FORMATION}", 
+            font=("Segoe UI", 8, "bold"),
+            fg="#f3e5ab",
+            bg="#161329"
+        )
+        self.lbl_subattempts_val.pack(anchor="w")
+        
+        self.scale_subattempts = tk.Scale(
+            self.slider_frame,
+            from_=1,
+            to=10,
+            orient="horizontal",
+            variable=self.subattempts_var,
+            command=self.on_subattempts_change,
+            bg="#161329",
+            fg="#f3e5ab",
+            troughcolor="#201c3d",
+            activebackground="#d4af37",
+            highlightthickness=0,
+            bd=0,
+            cursor="hand2",
+            font=("Segoe UI", 8)
+        )
+        self.scale_subattempts.pack(fill="x", pady=(2, 0))
         
         self.chk_custom = tk.Checkbutton(
             control_frame, 
@@ -346,7 +378,17 @@ class AFKBotGUI(tk.Tk):
 
     def toggle_retries(self):
         config.RETRY_EACH_FORMATION = self.retry_formation_var.get()
-        self.write_to_terminal(f">>> Reintentos por formación (5 veces): {'ACTIVADO' if config.RETRY_EACH_FORMATION else 'DESACTIVADO'}\n")
+        state = "normal" if config.RETRY_EACH_FORMATION else "disabled"
+        self.scale_subattempts.configure(state=state)
+        lbl_fg = "#f3e5ab" if config.RETRY_EACH_FORMATION else "#6b6782"
+        self.lbl_subattempts_val.configure(fg=lbl_fg)
+        self.write_to_terminal(f">>> Reintentos por formación: {'ACTIVADO (' + str(config.SUBATTEMPTS_PER_FORMATION) + ' subintentos)' if config.RETRY_EACH_FORMATION else 'DESACTIVADO'}\n")
+        self.update_dashboard()
+
+    def on_subattempts_change(self, val):
+        val_int = int(val)
+        config.SUBATTEMPTS_PER_FORMATION = val_int
+        self.lbl_subattempts_val.configure(text=f"Subintentos por equipo: {val_int}")
         self.update_dashboard()
 
     def toggle_custom_formations(self):

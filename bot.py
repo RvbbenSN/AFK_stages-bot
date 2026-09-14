@@ -164,44 +164,71 @@ def match_template_multi(screen_cv, template_name):
             
     return points
 
-def get_team_for_attempt(stage_attempt):
+def get_team_for_attempt(stage_attempt, max_known_community=None):
     """
-    Calcula el tipo de equipo y su valor/índice correspondiente para el intento actual (0 a 19).
-    Retorna (team_type, team_value)
+    Calcula el tipo de equipo, su valor/índice y si pertenece a la Fase 1 (barrido rápido)
+    o a la Fase 2 (insistencia con subintentos).
+    Retorna (team_type, team_value, is_fast_sweep)
     Donde:
       - team_type: "community" o "custom"
-      - team_value: índice entero (0-9) para community, o nombre de plantilla (str) para custom
+      - team_value: índice entero (0 a 9) para community, o nombre de plantilla (str) para custom
+      - is_fast_sweep: True (1 intento rápido) o False (subintentos completos de insistencia)
     """
-    # Si la opción de usar formaciones personalizadas está desactivada
-    if not getattr(config, "USE_CUSTOM_FORMATIONS", True):
-        # Mapear de 5 en 5 sobre los equipos de comunidad
-        if stage_attempt < 10:
-            return "community", stage_attempt % 5
-        else:
-            return "community", 5 + ((stage_attempt - 10) % 5)
+    use_custom = getattr(config, "USE_CUSTOM_FORMATIONS", True)
+    max_teams = max_known_community if (max_known_community is not None and max_known_community > 0) else 10
 
-    # Intentos 1 al 5 (stage_attempt 0-4): Comunidad 1-5
-    if stage_attempt in [0, 1, 2, 3, 4]:
-        return "community", stage_attempt
-    # Intentos 6 y 7 (stage_attempt 5-6): Personalizados AFKST1 y AFKST2
-    elif stage_attempt == 5:
-        return "custom", "AFKST1"
-    elif stage_attempt == 6:
-        return "custom", "AFKST2"
-    # Intentos 8 al 12 (stage_attempt 7-11): Comunidad 1-5 (segundo pase)
-    elif stage_attempt in [7, 8, 9, 10, 11]:
-        return "community", stage_attempt - 7
-    # Intentos 13 y 14 (stage_attempt 12-13): Personalizados AFKST1 y AFKST2 (segundo pase)
-    elif stage_attempt == 12:
-        return "custom", "AFKST1"
-    elif stage_attempt == 13:
-        return "custom", "AFKST2"
-    # Intentos 15 al 19 (stage_attempt 14-18): Comunidad 6-10
-    elif stage_attempt in [14, 15, 16, 17, 18]:
-        return "community", 5 + (stage_attempt - 14)
-    # Intento 20 (stage_attempt 19): Comunidad 6
+    # 1. FASE 1: BARRIDO RÁPIDO (1 intento por formación para victoria rápida)
+    fast_sweep_steps = []
+    
+    # Primero formaciones impares de la comunidad: #1 (idx 0), #3 (idx 2), #5 (idx 4), #7 (idx 6), #9 (idx 8)
+    for idx in [0, 2, 4, 6, 8]:
+        if idx < max_teams:
+            fast_sweep_steps.append(("community", idx, True))
+            
+    # Luego formaciones pares de la comunidad: #2 (idx 1), #4 (idx 3), #6 (idx 5), #8 (idx 7)
+    for idx in [1, 3, 5, 7]:
+        if idx < max_teams:
+            fast_sweep_steps.append(("community", idx, True))
+            
+    # Al final del barrido, las formaciones guardadas (si están activadas)
+    if use_custom:
+        fast_sweep_steps.append(("custom", "AFKST1", True))
+        fast_sweep_steps.append(("custom", "AFKST2", True))
+
+    # 2. FASE 2: INSISTENCIA POR RNG (aplica los subintentos configurados en el slider)
+    insist_steps = []
+    
+    # Siempre insistir primero en Comunidad #1
+    if 0 < max_teams:
+        insist_steps.append(("community", 0, False))
+        
+    # Insistir en personalizadas si están activas
+    if use_custom:
+        insist_steps.append(("custom", "AFKST1", False))
+        insist_steps.append(("custom", "AFKST2", False))
+        
+    # Insistir en Comunidad #2 y #3 (si existen)
+    for idx in [1, 2]:
+        if idx < max_teams:
+            insist_steps.append(("community", idx, False))
+            
+    # Insistir en Comunidad #4 y #5 (si existen)
+    for idx in [3, 4]:
+        if idx < max_teams:
+            insist_steps.append(("community", idx, False))
+
+    # Combinar el plan completo de la etapa
+    all_steps = fast_sweep_steps + insist_steps
+    if not all_steps:
+        return "community", 0, False
+
+    if stage_attempt < len(all_steps):
+        return all_steps[stage_attempt]
     else:
-        return "community", 5
+        # Si se superan los pasos definidos, ciclar sobre las opciones de insistencia
+        pool = insist_steps if insist_steps else all_steps
+        fallback_idx = (stage_attempt - len(all_steps)) % len(pool)
+        return pool[fallback_idx]
 
 def update_bot_stats(mode=None, stage_attempt=None, sub_attempt=None, max_sub_attempts=None,
                      team_info=None, battle_state=None, last_battle_duration=None,
@@ -235,7 +262,7 @@ def simulate_human_click(window, rel_x, rel_y):
     
     delay = random.uniform(config.CLICK_MIN_DELAY, config.CLICK_MAX_DELAY)
     if config.DEBUG:
-        print(f"[BOT] Esperando {delay:.2f}s antes de cliquear en ({click_x}, {click_y})...")
+        print(f"[BOT] Esperando {delay:.2f}s antes de hacer clic en ({click_x}, {click_y})...")
     time.sleep(delay)
     
     try:
@@ -304,6 +331,7 @@ def run_bot():
     stages_cleared_phantimal = 0       # Contador de victorias phantimal en la sesión
     stage_attempt = 0                  # Intentos en la etapa actual en este modo (límite 20)
     sub_attempt = 0                    # Subintentos con la formación actual (0 a 4)
+    max_known_community_teams = None   # Máximo de formaciones comunitarias descubiertas en el nivel actual
     mode_locked = False                # Si está bloqueado en un modo por haber fallado 20 veces en el otro
     current_displayed_team_index = 0   # Índice de formación que está actualmente visible en pantalla
     team_type = "community"            # "community" o "custom"
@@ -365,8 +393,8 @@ def run_bot():
             time.sleep(2)
             continue
             
-        # Resolver dinámicamente el equipo a utilizar basado en stage_attempt
-        team_type, team_value = get_team_for_attempt(stage_attempt)
+        # Resolver dinámicamente el equipo a utilizar basado en stage_attempt y tope de comunidad conocido
+        team_type, team_value, is_fast_sweep = get_team_for_attempt(stage_attempt, max_known_community_teams)
         if team_type == "community":
             current_team_index = team_value
             custom_name = None
@@ -376,13 +404,18 @@ def run_bot():
             custom_name = team_value
             current_team_info = f"Propia {team_value}"
 
-        max_subs = getattr(config, "SUBATTEMPTS_PER_FORMATION", 5) if getattr(config, "RETRY_EACH_FORMATION", True) else 1
+        phase_label = "Barrido" if is_fast_sweep else "Insistencia"
+        current_team_display = f"{current_team_info} ({phase_label})"
+
+        retry_enabled = getattr(config, "RETRY_EACH_FORMATION", True)
+        effective_max_subs = 1 if (is_fast_sweep or not retry_enabled) else getattr(config, "SUBATTEMPTS_PER_FORMATION", 5)
+
         update_bot_stats(
             mode=current_mode,
             stage_attempt=stage_attempt + 1,
             sub_attempt=sub_attempt + 1,
-            max_sub_attempts=max_subs,
-            team_info=current_team_info,
+            max_sub_attempts=effective_max_subs,
+            team_info=current_team_display,
             defeats_consecutive=consecutive_defeats,
             stages_normal=stages_cleared_normal,
             stages_phantimal=stages_cleared_phantimal,
@@ -418,6 +451,7 @@ def run_bot():
             mode_locked = False
             team_already_copied = False
             current_displayed_team_index = 0
+            max_known_community_teams = None  # Reiniciar descubrimiento de lista para el nuevo nivel
             
             update_bot_stats(
                 battle_state="¡Victoria!",
@@ -439,6 +473,7 @@ def run_bot():
                 print("[MODO] Se han completado 5 batallas en este modo. Rotando al modo alternativo...")
                 need_mode_switch = True
                 battles_count = 0
+                max_known_community_teams = None
                 current_mode = "phantimal" if current_mode == "battle" else "battle"
                 
                 # Para cambiar de modo tras ganar, hacemos clic fuera del botón "continuar" (en el cartel de victoria).
@@ -474,20 +509,18 @@ def run_bot():
             defeats_session += 1
             current_displayed_team_index = 0  # El panel se cierra por la derrota, así que se reinicia a 0
             
-            # Lógica de subintentos por formación
-            retry_enabled = getattr(config, "RETRY_EACH_FORMATION", True)
-            max_subs = getattr(config, "SUBATTEMPTS_PER_FORMATION", 5)
-            
-            if retry_enabled and (sub_attempt + 1) < max_subs:
+            # Lógica de subintentos por formación según fase (barrido rápido vs insistencia)
+            if (sub_attempt + 1) < effective_max_subs:
                 sub_attempt += 1
                 team_already_copied = True  # La formación sigue colocada en el tablero, no hace falta reabrir menús
-                print(f"[DERROTA] Falla en la etapa. Reintentando formación (Subintento #{sub_attempt + 1}/{max_subs} | Intento #{stage_attempt + 1}/20). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
+                print(f"[DERROTA] Falla en la etapa. Reintentando formación (Subintento #{sub_attempt + 1}/{effective_max_subs} | Intento #{stage_attempt + 1}/20). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
             else:
                 sub_attempt = 0
                 stage_attempt += 1
                 battles_count += 1
                 team_already_copied = False
-                print(f"[DERROTA] Falla en la etapa tras agotar subintentos. Pasando a la siguiente formación (Intento #{stage_attempt + 1}/20 en este nivel). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
+                phase_msg = "Fin de barrido para esta formación" if is_fast_sweep else "Subintentos agotados"
+                print(f"[DERROTA] Falla en la etapa ({phase_msg}). Pasando a la siguiente formación (Intento #{stage_attempt + 1}/20 en este nivel). (Derrotas globales consecutivas: {consecutive_defeats}/30)")
             
             update_bot_stats(
                 battle_state="Derrota",
@@ -523,6 +556,7 @@ def run_bot():
                 battles_count = 0
                 current_team_index = 0
                 team_already_copied = False
+                max_known_community_teams = None
             # Comprobar si debemos alternar por límite de 5 formaciones (solo si el modo no está bloqueado)
             elif battles_count >= 5 and not mode_locked:
                 print("[MODO] Se han completado 5 formaciones en este modo. Rotando al modo alternativo...")
@@ -532,13 +566,16 @@ def run_bot():
                 stage_attempt = 0
                 sub_attempt = 0
                 team_already_copied = False
+                max_known_community_teams = None
                 current_mode = "phantimal" if current_mode == "battle" else "battle"
             else:
-                next_type, next_value = get_team_for_attempt(stage_attempt)
+                next_type, next_value, next_sweep = get_team_for_attempt(stage_attempt, max_known_community_teams)
+                next_phase = "Barrido Rápido" if next_sweep else "Insistencia"
+                next_subs = 1 if (next_sweep or not retry_enabled) else getattr(config, "SUBATTEMPTS_PER_FORMATION", 5)
                 if next_type == "community":
-                    print(f"[BOT] Configurado para usar formación de comunidad #{next_value + 1} (Subintento #{sub_attempt + 1}/{max_subs if retry_enabled else 1})")
+                    print(f"[BOT] Siguiente formación: Comunidad #{next_value + 1} [{next_phase}] (Subintento #{sub_attempt + 1}/{next_subs})")
                 else:
-                    print(f"[BOT] Configurado para usar formación personalizada: {next_value} (Subintento #{sub_attempt + 1}/{max_subs if retry_enabled else 1})")
+                    print(f"[BOT] Siguiente formación: Personalizada {next_value} [{next_phase}] (Subintento #{sub_attempt + 1}/{next_subs})")
                 
             # Buscar el botón de reintentar
             _, retry_pt = match_template_single(screen_cv, "retry")
@@ -593,12 +630,17 @@ def run_bot():
                 stage_attempt = 0
                 battles_count = 0
                 current_team_index = 0
+                max_known_community_teams = None
             else:
-                next_type, next_value = get_team_for_attempt(stage_attempt)
+                next_type, next_value, next_sweep = get_team_for_attempt(stage_attempt, max_known_community_teams)
+                next_phase = "Barrido Rápido" if next_sweep else "Insistencia"
                 if next_type == "community":
-                    print(f"[BOT] Siguiente intento configurado para usar formación de comunidad #{next_value + 1}")
+                    print(f"[BOT] Siguiente intento configurado para usar formación de comunidad #{next_value + 1} [{next_phase}]")
                 else:
-                    print(f"[BOT] Siguiente intento configurado para usar formación personalizada: {next_value}")
+                    print(f"[BOT] Siguiente intento configurado para usar formación personalizada: {next_value} [{next_phase}]")
+                
+            time.sleep(config.LOOP_DELAY + 0.5)
+            continue
                 
             time.sleep(config.LOOP_DELAY + 0.5)
             continue
@@ -750,30 +792,57 @@ def run_bot():
                         continue
                         
                     if clicks_needed > 0:
-                        print(f"[RECORDS] Avanzando {clicks_needed} veces para llegar a la formación #{current_team_index + 1} (Índice actual: {current_displayed_team_index})...")
-                        _, next_pt = match_template_single(screen_cv, "next_formation")
-                    
-                        if next_pt:
-                            for i in range(clicks_needed):
-                                print(f"  -> Clic en Siguiente Formación ({i+1}/{clicks_needed})")
-                                simulate_human_click(window, next_pt[0], next_pt[1])
-                                time.sleep(0.4) # Espera pequeña para que cargue la visual
-                            current_displayed_team_index = current_team_index
-                        else:
-                            print("[RECORDS] Fin de la lista alcanzado (No se encontró el botón de 'next_formation').")
-                            print("[BOT] Cambiando de modo de juego para evitar bloqueo...")
-                            need_mode_switch = True
-                            current_mode = "phantimal" if current_mode == "battle" else "battle"
-                            mode_locked = True
-                            stage_attempt = 0
-                            battles_count = 0
-                            current_team_index = 0
+                        print(f"[RECORDS] Avanzando {clicks_needed} veces para llegar a la formación #{current_team_index + 1} (Índice actual: #{current_displayed_team_index + 1})...")
+                        
+                        advanced_ok = True
+                        for i in range(clicks_needed):
+                            # En el primer paso usamos la captura screen_cv, en los siguientes refrescamos para verificar que la flechita siga visible
+                            if i > 0:
+                                time.sleep(0.4)
+                                try:
+                                    fresh_s = ImageGrab.grab(bbox=bbox, all_screens=True)
+                                    fresh_s_cv = cv2.cvtColor(np.array(fresh_s), cv2.COLOR_RGB2BGR)
+                                    _, step_next_pt = match_template_single(fresh_s_cv, "next_formation")
+                                except:
+                                    step_next_pt = None
+                            else:
+                                _, step_next_pt = match_template_single(screen_cv, "next_formation")
+                                
+                            if not step_next_pt:
+                                max_known_community_teams = current_displayed_team_index + 1
+                                print(f"[RECORDS] Fin de lista detectado. No hay botón de siguiente formación tras el equipo #{current_displayed_team_index + 1} (Tope comunitario en esta etapa: {max_known_community_teams}).")
+                                advanced_ok = False
+                                break
+                                
+                            print(f"  -> Clic en Siguiente Formación ({i+1}/{clicks_needed})")
+                            simulate_human_click(window, step_next_pt[0], step_next_pt[1])
+                            current_displayed_team_index += 1
                             
-                            # Salir de la pantalla de preparación
-                            _, atras_pt = match_template_single(screen_cv, "atras")
-                            if atras_pt:
-                                simulate_human_click(window, atras_pt[0], atras_pt[1])
-                            time.sleep(config.LOOP_DELAY + 0.5)
+                        if not advanced_ok:
+                            # Cerramos el panel de registros para avanzar al siguiente paso disponible
+                            print("[RECORDS] Cerrando panel de comunidad para saltar al siguiente equipo disponible...")
+                            simulate_human_click(window, int(window.width * 0.25), int(window.height * 0.5))
+                            current_displayed_team_index = 0
+                            stage_attempt += 1
+                            sub_attempt = 0
+                            team_already_copied = False
+                            time.sleep(0.6)
+                            
+                            if stage_attempt >= 20:
+                                print("[MODO] Se han realizado 20 intentos en este nivel. Cambiando al otro modo y bloqueándolo allí...")
+                                need_mode_switch = True
+                                current_mode = "phantimal" if current_mode == "battle" else "battle"
+                                mode_locked = True
+                                stage_attempt = 0
+                                sub_attempt = 0
+                                battles_count = 0
+                                current_team_index = 0
+                                team_already_copied = False
+                                max_known_community_teams = None
+                                _, atras_pt = match_template_single(screen_cv, "atras")
+                                if atras_pt:
+                                    simulate_human_click(window, atras_pt[0], atras_pt[1])
+                                time.sleep(config.LOOP_DELAY + 0.5)
                             continue
                         
                 # Volver a buscar el botón 'copy' actualizado en pantalla y pulsarlo

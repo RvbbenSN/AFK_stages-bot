@@ -31,21 +31,26 @@ Todos se coordinan leyendo y actualizando este fichero y registrando las decisio
 
 | # | Tarea | Estado | Responsable | Notas |
 |---|---|---|---|---|
-| 1 | Detección de "All Stages Cleared" y felicitación | HECHO | Gemini | Plantilla guardada, detección en loop y GUI con gema dorada. |
-| 2 | Arquitectura Modular y SDD (`specs/`, `core/`, `tests/`) | HECHO | Gemini | Core extraído (vision, inputs, window), specs YAML, 7 tests unitarios en verde y ruff limpio. |
-| 3 | Lector OCR de etapa actual (Battle Prep / Lobby) | PENDIENTE | Por asignar | Pendiente de captura tras nuevo reset/temporada de etapas. |
-| 4 | Módulo Homestead (Síntesis de materiales y quests diarias) | PENDIENTE | Por asignar | Se desarrollará en `src/modules/homestead.py` de forma aislada. |
+| 1 | Detección de "All Stages Cleared" y felicitación | HECHO | Gemini | Plantilla guardada, detección en loop y GUI con gema dorada al completar el 100%. |
+| 2 | Arquitectura Modular y SDD (`specs/`, `core/`, `tests/`) | HECHO | Gemini | Core extraído (vision, inputs, window), specs YAML, 9 tests unitarios en verde y ruff limpio. |
+| 3A | OCR de etapa en Combate (Cabecera superior central en preparación) | PENDIENTE (En espera de reset/temporada) | Por asignar | **La mejor ubicación**: centro superior bajo el marco antes de pelear. Cero dependencia de avatares, alto contraste y texto completo con modo (Normal/Phantimal), Apex y número. Pendiente de captura cuando abran nuevas etapas. |
+| 3B | OCR de etapa global (Esquina del lobby / selector) | PENDIENTE (Opcional) | Por asignar | Alternativa si se desea probar OCR antes del reseteo: leer el número global fijo de la esquina que sí está visible tras completar las etapas. |
+| 4 | Módulo Homestead (`src/modules/homestead.py`) | PENDIENTE (Próximo objetivo) | Por asignar | Automatizar tareas diarias disponibles siempre: (1) recolectar recursos, (2) cola de síntesis de materiales, (3) entregas de pedidos/quests diarias hasta límite, (4) selector de modo en `gui.py`. |
 
 ---
 
 ## Bitácora
 
-- **2026-09-16** (Gemini) — **Inicio de transición a arquitectura modular y SDD**:
+- **2026-09-16** (Gemini) — **Detalle de tareas pendientes de AFK Stages y Homestead**:
+  - Desglosada la tarea de OCR en dos opciones: combate (centro superior en preparación, pospuesta a la nueva temporada) y global (esquina del lobby, opcional).
+  - Documentado el alcance del futuro módulo de Homestead (`src/modules/homestead.py`) como siguiente paso independiente.
+- **2026-09-16** (Gemini) — **Transición completada a arquitectura modular y SDD**:
   - Creación de la rama `feature/sdd-modular-architecture`.
   - Instalación de `pyyaml`, `pytest` y `ruff` en `.venv`.
   - Creación de `AGENTS.md`, `ESTADO.md`, `GEMINI.md` y `CLAUDE.md`.
   - Definición de especificaciones declarativas (`specs/templates.yaml`, `specs/battle_strategy.yaml`).
-  - Extracción de `src/core/` (`vision.py`, `inputs.py`, `window.py`) y suite de tests offline.
+  - Extracción de `src/core/` (`vision.py`, `inputs.py`, `window.py`) y `src/modules/afk_stages.py`.
+  - Blindaje de `match_template` ante capturas pequeñas y 9 tests unitarios automatizados al 100% verde.
 - **2026-09-15** (Gemini) — **Implementación de All Stages Cleared**:
   - Incorporada la plantilla `images/all_stages_cleared.jpg` con umbral 0.82.
   - Parada segura del bot y mensaje conmemorativo al completar el 100% de etapas.

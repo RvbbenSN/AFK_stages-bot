@@ -111,7 +111,8 @@ TEMPLATE_THRESHOLDS = {
     "green_tick": 0.80,
     "tap_to_exit": 0.80,
     "auto_off": 0.86,
-    "auto_on": 0.86
+    "auto_on": 0.86,
+    "all_stages_cleared": 0.82
 }
 
 def match_template_single(screen_cv, template_name):
@@ -313,7 +314,7 @@ def run_bot():
         "records", "next_formation", "copy", "battle", "victory",
         "continuar_normal", "continuar_phantimal", "defeat", "retry", "atras",
         "cancel_no-heroe", "formations_btn", "AFKST1", "AFKST2", "use_btn", "green_tick",
-        "tap_to_exit", "auto_off", "auto_on"
+        "tap_to_exit", "auto_off", "auto_on", "all_stages_cleared"
     ]
     
     print("[INFO] Comprobando archivos de imágenes en images/:")
@@ -709,6 +710,27 @@ def run_bot():
             simulate_human_click(window, green_tick_pt[0], green_tick_pt[1])
             time.sleep(config.LOOP_DELAY + 0.6)
             continue
+            
+        # 2.8. VERIFICAR SI SE HAN SUPERADO TODAS LAS ETAPAS ("All Stages Cleared")
+        if not in_battle:
+            _, all_cleared_pt = match_template_single(screen_cv, "all_stages_cleared")
+            if all_cleared_pt:
+                matched = True
+                print("\n" + "=" * 65)
+                print("   🎉🎉🎉 ¡ENHORABUENA! HAS COMPLETADO TODAS LAS ETAPAS 🎉🎉🎉")
+                print("=" * 65)
+                print("[BOT] Se ha detectado el cartel 'All Stages Cleared' en pantalla.")
+                print("[BOT] ¡Felicidades! Has superado todas las etapas disponibles de AFK Stages.")
+                print("[BOT] Deteniendo el bot de forma segura para no consumir recursos.")
+                print("=" * 65 + "\n")
+                
+                update_bot_stats(
+                    battle_state="¡Todas Superadas!",
+                    team_info="¡Completado al 100%!"
+                )
+                config.BOT_RUNNING = False
+                break
+
             
         # 3. CAMBIO DE MODO REQUERIDO (Atascado en un modo, volver al mapa principal de etapas)
         if need_mode_switch:

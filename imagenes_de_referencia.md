@@ -43,6 +43,8 @@ Todas las capturas deben guardarse en la carpeta: `c:\Users\rubbe\Documents\AFK_
 | ![continuar_phantimal](images/continuar_phantimal.jpg) | `continuar_phantimal.jpg` | Botón para avanzar directamente al siguiente nivel tras ganar en el modo Phantimal. |
 | ![defeat](images/defeat.jpg) | `defeat.jpg` | Cartel o pantalla de Derrota que aparece al perder el combate. |
 | ![retry](images/retry.jpg) | `retry.jpg` | Botón para regresar a la pantalla de preparación tras una derrota. |
+| ![all_stages_cleared](images/all_stages_cleared.jpg) | `all_stages_cleared.jpg` | Cartel "All Stages Cleared" que indica que se han superado todas las fases disponibles. |
+
 
 ---
 

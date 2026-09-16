@@ -418,7 +418,8 @@ class AFKBotGUI(tk.Tk):
                 "¡Victoria!": "#50fa7b",
                 "Derrota": "#ff5555",
                 "Héroe Faltante": "#ffb86c",
-                "En espera": "#c7c3e2"
+                "En espera": "#c7c3e2",
+                "¡Todas Superadas!": "#ffd700"
             }
             self.lbl_state_value.configure(text=f"• {bstate}", fg=state_colors.get(bstate, "#c7c3e2"))
             
@@ -464,10 +465,17 @@ class AFKBotGUI(tk.Tk):
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
         
-        # Cristal Rojo (Apagado)
-        self.draw_gem("#ff3333")
-        self.status_label.configure(text="APAGADO")
-        self.write_to_terminal(">>> Bot detenido con éxito.\n")
+        stats = getattr(config, "BOT_STATS", {})
+        bstate = stats.get("battle_state", "")
+        if bstate == "¡Todas Superadas!":
+            self.draw_gem("#ffd700")
+            self.status_label.configure(text="¡COMPLETADO!", fg="#ffd700")
+            self.write_to_terminal("\n>>> 🏆 ¡ENHORABUENA! SE HAN COMPLETADO TODAS LAS ETAPAS. BOT FINALIZADO. 🏆\n\n")
+        else:
+            # Cristal Rojo (Apagado)
+            self.draw_gem("#ff3333")
+            self.status_label.configure(text="APAGADO", fg="#e1e1e6")
+            self.write_to_terminal(">>> Bot detenido con éxito.\n")
         self.update_dashboard()
 
     def poll_logs(self):

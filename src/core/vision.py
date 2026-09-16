@@ -77,18 +77,22 @@ def match_template_single(screen_cv, template_name):
     Retorna (confianza, (centro_x, centro_y)) o (0, None) si no hay coincidencia.
     """
     template = load_template(template_name)
-    if template is None:
+    if template is None or screen_cv is None:
+        return 0, None
+
+    th, tw = template.shape[:2]
+    sh, sw = screen_cv.shape[:2]
+    if sh < th or sw < tw:
         return 0, None
 
     result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)
-    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+    _min_val, max_val, _min_loc, max_loc = cv2.minMaxLoc(result)
 
     threshold = get_template_threshold(template_name)
 
     if max_val >= threshold:
-        h, w = template.shape[:2]
-        cx = max_loc[0] + w // 2
-        cy = max_loc[1] + h // 2
+        cx = max_loc[0] + tw // 2
+        cy = max_loc[1] + th // 2
         return max_val, (cx, cy)
     return max_val, None
 
@@ -98,7 +102,12 @@ def match_template_multi(screen_cv, template_name):
     Retorna una lista de coordenadas (centro_x, centro_y).
     """
     template = load_template(template_name)
-    if template is None:
+    if template is None or screen_cv is None:
+        return []
+
+    th, tw = template.shape[:2]
+    sh, sw = screen_cv.shape[:2]
+    if sh < th or sw < tw:
         return []
 
     result = cv2.matchTemplate(screen_cv, template, cv2.TM_CCOEFF_NORMED)

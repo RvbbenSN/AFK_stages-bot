@@ -1,0 +1,23 @@
+# specs/battle_strategy.yaml — Estrategia declarativa de rotación de formaciones
+# Define cómo se prueban los equipos por etapa antes de rotar de modo o insistir.
+
+limits:
+  max_stage_attempts: 20        # Intentos máximos por nivel antes de alternar de modo
+  max_consecutive_defeats: 30   # Límite de derrotas globales antes de activar failsafe/apagado
+  default_subattempts: 5        # Subintentos por formación en fase de insistencia
+
+# 1. FASE 1: BARRIDO RÁPIDO (1 intento por formación para victoria rápida)
+fast_sweep:
+  # Índices impares de la comunidad (0 = equipo 1, 2 = equipo 3, etc.)
+  community_odds: [0, 2, 4, 6, 8]
+  # Índices pares de la comunidad (1 = equipo 2, 3 = equipo 4, etc.)
+  community_evens: [1, 3, 5, 7]
+  # Formaciones personalizadas al final del barrido
+  custom_teams: ["AFKST1", "AFKST2"]
+
+# 2. FASE 2: INSISTENCIA POR RNG (Aplica subintentos configurados)
+insistence:
+  primary_community: [0]        # Prioridad máxima: Comunidad #1
+  custom_teams: ["AFKST1", "AFKST2"]
+  secondary_community: [1, 2]   # Comunidad #2 y #3
+  fallback_community: [3, 4]    # Comunidad #4 y #5

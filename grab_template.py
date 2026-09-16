@@ -1,14 +1,15 @@
-import sys
 import os
 import time
 import tkinter as tk
 from tkinter import messagebox, simpledialog
-from PIL import Image, ImageTk, ImageDraw
-import pygetwindow as gw
+
 import pyautogui
+import pygetwindow as gw
+from PIL import Image, ImageTk
 
 # Importar configuracion
 import config
+
 
 class TemplateGrabberApp:
     def __init__(self, root, screenshot_image, window_rect):
@@ -205,7 +206,7 @@ def main():
 
     # Iniciar interfaz Tkinter para recortar
     root = tk.Tk()
-    app = TemplateGrabberApp(root, screenshot, bbox)
+    _app = TemplateGrabberApp(root, screenshot, bbox)
     root.mainloop()
 
 if __name__ == "__main__":

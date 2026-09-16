@@ -1,14 +1,14 @@
+import queue
+import sys
+import threading
 import tkinter as tk
 from tkinter import scrolledtext
-import threading
-import sys
-import queue
-import time
-import os
+
+import bot
 
 # Asegurar importación de bot y configuración local
 import config
-import bot
+
 
 class GUIStdoutRedirector:
     """Redirecciona stdout/stderr de forma segura a una cola de ejecución."""

@@ -1,0 +1,109 @@
+# specs/templates.yaml — Catálogo declarativo de plantillas visuales del bot
+# Define los umbrales de confianza, nombres de archivo y descripciones funcionales.
+
+templates:
+  # 1. Navegación general y menús
+  battle_modes:
+    filename: "battle_modes.jpg"
+    threshold: 0.70
+    description: "Botón para acceder al menú de modos de batalla desde el lobby"
+  AFK_stages:
+    filename: "AFK_stages.jpg"
+    threshold: 0.70
+    description: "Botón para entrar a las etapas AFK dentro de modos de batalla"
+  normal_challenge:
+    filename: "normal_challenge.jpg"
+    threshold: 0.88
+    description: "Botón Battle de la etapa normal en el selector de fases"
+  phantimal_challenge:
+    filename: "phantimal_challenge.jpg"
+    threshold: 0.80
+    description: "Botón Battle del modo Phantimal Challenge en el selector"
+  atras:
+    filename: "atras.jpg"
+    threshold: 0.80
+    description: "Botón flecha atrás en la esquina superior izquierda"
+
+  # 2. Preparación de combate y copia de formaciones
+  records:
+    filename: "records.jpg"
+    threshold: 0.80
+    description: "Icono de registros/estadísticas para abrir formaciones comunitarias"
+  next_formation:
+    filename: "next_formation.jpg"
+    threshold: 0.80
+    description: "Flecha derecha para pasar al siguiente equipo de la comunidad"
+  copy:
+    filename: "copy.jpg"
+    threshold: 0.80
+    description: "Botón Copiar formación seleccionada al tablero"
+  battle:
+    filename: "battle.jpg"
+    threshold: 0.80
+    description: "Botón grande verde para iniciar el combate"
+  cancel_no-heroe:
+    filename: "cancel_no-heroe.jpg"
+    threshold: 0.80
+    description: "Botón Cancelar si la formación contiene héroes que no se poseen"
+
+  # 3. Formaciones personalizadas
+  formations_btn:
+    filename: "formations_btn.jpg"
+    threshold: 0.80
+    description: "Icono de casco/engranaje para abrir lista de formaciones guardadas"
+  AFKST1:
+    filename: "AFKST1.jpg"
+    threshold: 0.80
+    description: "Cabecera identificativa de la primera formación propia (AFKST1)"
+  AFKST2:
+    filename: "AFKST2.jpg"
+    threshold: 0.80
+    description: "Cabecera identificativa de la segunda formación propia (AFKST2)"
+  use_btn:
+    filename: "use_btn.jpg"
+    threshold: 0.80
+    description: "Botón verde Use para aplicar la formación propia"
+
+  # 4. Fin de batalla y resultados
+  victory:
+    filename: "victory.jpg"
+    threshold: 0.80
+    description: "Cartel de Victoria al superar la etapa"
+  continuar_normal:
+    filename: "continuar_normal.jpg"
+    threshold: 0.88
+    description: "Botón Continuar tras victoria en modo Normal"
+  continuar_phantimal:
+    filename: "continuar_phantimal.jpg"
+    threshold: 0.80
+    description: "Botón Continuar tras victoria en modo Phantimal"
+  defeat:
+    filename: "defeat.jpg"
+    threshold: 0.80
+    description: "Cartel de Derrota al perder el combate"
+  retry:
+    filename: "retry.jpg"
+    threshold: 0.80
+    description: "Botón Retry para volver a la pantalla de preparación"
+  all_stages_cleared:
+    filename: "all_stages_cleared.jpg"
+    threshold: 0.82
+    description: "Cartel All Stages Cleared al superar el 100% de etapas disponibles"
+
+  # 5. Popups, avisos y combate
+  green_tick:
+    filename: "green_tick.jpg"
+    threshold: 0.80
+    description: "Tick verde para descartar disclaimer diario de recompensas limitadas"
+  tap_to_exit:
+    filename: "tap_to_exit.jpg"
+    threshold: 0.80
+    description: "Aviso emergente de ofertas o eventos cerrable mediante Tap to exit"
+  auto_off:
+    filename: "auto_off.png"
+    threshold: 0.86
+    description: "Icono de auto-lanzamiento de habilidades desactivado (gris)"
+  auto_on:
+    filename: "auto_on.png"
+    threshold: 0.86
+    description: "Icono de auto-lanzamiento de habilidades activado (dorado)"
